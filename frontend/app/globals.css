@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-inter: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: #0A0A0F;
+    color: #FFFFFF;
+    font-family: var(--font-inter);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: rgba(0, 255, 209, 0.3);
+    color: #FFFFFF;
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: rgba(26, 26, 36, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-nav {
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .neon-border {
+    border: 1px solid #00FFD1;
+    box-shadow: 0 0 5px rgba(0, 255, 209, 0.5), inset 0 0 5px rgba(0, 255, 209, 0.1);
+  }
+
+  .neon-border-purple {
+    border: 1px solid #BF00FF;
+    box-shadow: 0 0 5px rgba(191, 0, 255, 0.5), inset 0 0 5px rgba(191, 0, 255, 0.1);
+  }
+
+  .neon-border-pink {
+    border: 1px solid #FF006E;
+    box-shadow: 0 0 5px rgba(255, 0, 110, 0.5), inset 0 0 5px rgba(255, 0, 110, 0.1);
+  }
+
+  .gradient-text-primary {
+    background: linear-gradient(135deg, #00FFD1 0%, #BF00FF 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-text-accent {
+    background: linear-gradient(135deg, #FF006E 0%, #BF00FF 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .btn-neon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    border-radius: 0.5rem;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    overflow: hidden;
+  }
+
+  .btn-neon-primary {
+    background: linear-gradient(135deg, #00FFD1 0%, #00CCAA 100%);
+    color: #0A0A0F;
+    box-shadow: 0 0 15px rgba(0, 255, 209, 0.4);
+  }
+
+  .btn-neon-primary:hover {
+    box-shadow: 0 0 25px rgba(0, 255, 209, 0.6);
+    transform: translateY(-1px);
+  }
+
+  .btn-neon-secondary {
+    background: linear-gradient(135deg, #BF00FF 0%, #9900CC 100%);
+    color: #FFFFFF;
+    box-shadow: 0 0 15px rgba(191, 0, 255, 0.4);
+  }
+
+  .btn-neon-secondary:hover {
+    box-shadow: 0 0 25px rgba(191, 0, 255, 0.6);
+    transform: translateY(-1px);
+  }
+
+  .btn-neon-accent {
+    background: linear-gradient(135deg, #FF006E 0%, #CC0058 100%);
+    color: #FFFFFF;
+    box-shadow: 0 0 15px rgba(255, 0, 110, 0.4);
+  }
+
+  .btn-neon-accent:hover {
+    box-shadow: 0 0 25px rgba(255, 0, 110, 0.6);
+    transform: translateY(-1px);
+  }
+
+  .card-surface {
+    background: linear-gradient(145deg, #1A1A24 0%, #151520 100%);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .heat-indicator {
+    background: linear-gradient(90deg, #FF006E 0%, #FF6B35 50%, #FFD93D 100%);
+  }
+
+  .scrollbar-hidden {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer utilities {
+  .text-shadow-neon {
+    text-shadow: 0 0 10px currentColor, 0 0 20px currentColor, 0 0 40px currentColor;
+  }
+
+  .box-shadow-neon {
+    box-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+
+  .mask-fade-bottom {
+    -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+  }
+
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0A0A0F;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2A2A38;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00FFD1;
+}

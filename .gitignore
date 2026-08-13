@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.db
+*.sqlite3
+
+# 环境变量（不要上传到 GitHub）
+.env
+.env.local
+.env.production
+
+# Node.js
+node_modules/
+.next/
+out/
+build/
+.DS_Store
+*.pem
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 日志
+*.log
+logs/
+
+# 临时文件
+tmp/
+temp/
+
+# Node.js tools
+.tools/

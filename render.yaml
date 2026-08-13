@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: ai-news-api
+    runtime: python
+    region: singapore
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: LLM_PROVIDERS
+        sync: false
+      - key: CORS_ORIGINS
+        value: '["*"]'
+      - key: COLLECTION_INTERVAL_HOURS
+        value: '24'
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PYTHON_VERSION
+        value: '3.11.0'
