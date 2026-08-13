@@ -80,6 +80,7 @@ async def seed_data():
         cards_data = json.load(f)
     
     saved = 0
+    errors = []
     async with async_session() as db:
         for item in cards_data:
             try:
@@ -91,26 +92,42 @@ async def seed_data():
                     if existing.scalar_one_or_none():
                         continue
                 
+                # Handle published_at conversion
+                published_at = item.get("published_at")
+                if published_at and isinstance(published_at, str):
+                    try:
+                        from datetime import datetime
+                        published_at = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+                    except (ValueError, TypeError):
+                        published_at = None
+                
                 card = NewsCard(
-                    title=item.get("title", "未知标题"),
+                    title=item.get("title", "未知标题")[:500],
                     summary=item.get("summary"),
                     category=item.get("category", "其他"),
                     source=item.get("source", "未知"),
-                    source_url=item.get("source_url", ""),
+                    source_url=item.get("source_url", "")[:1000],
                     source_id=source_id,
                     heat_score=item.get("heat_score", 0.0),
                     ai_value_score=item.get("ai_value_score", 50.0),
                     interest_tags=item.get("interest_tags", []),
                     cover_image=item.get("cover_image"),
+                    published_at=published_at,
                 )
                 db.add(card)
                 saved += 1
             except Exception as e:
-                logger.error(f"种子数据保存失败: {str(e)[:100]}")
+                errors.append(f"{item.get('title','?')[:30]}: {str(e)[:80]}")
+                logger.error(f"种子数据保存失败: {str(e)[:200]}")
         
         await db.commit()
     
-    return {"status": "ok", "message": f"Seeded {saved} cards", "total_in_file": len(cards_data)}
+    return {
+        "status": "ok",
+        "message": f"Seeded {saved} cards",
+        "total_in_file": len(cards_data),
+        "errors": errors[:5] if errors else None
+    }
 
 
 @app.post("/api/admin/settle-predictions")
