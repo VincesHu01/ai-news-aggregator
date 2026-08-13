@@ -1,8 +1,6 @@
 from contextlib import asynccontextmanager
 import asyncio
-import json
 import logging
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
@@ -70,21 +68,28 @@ async def trigger_collection():
         return {"status": "error", "message": str(e)[:200]}
 
 
+@app.get("/api/admin/db-check")
+async def db_check():
+    try:
+        async with async_session() as db:
+            result = await db.execute(select(NewsCard).limit(1))
+            count = result.scalars().all()
+            return {"status": "ok", "connection": "working", "sample_count": len(count)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)[:500]}
+
+
 @app.post("/api/admin/seed-data")
 async def seed_data():
+    cards_data = []
     try:
         from app.seed_data import SEED_DATA
         cards_data = SEED_DATA
-    except ImportError:
-        seed_path = os.path.join(os.path.dirname(__file__), "..", "seed_data.json")
-        logger.info(f"Seed path fallback: {seed_path}, exists: {os.path.exists(seed_path)}")
-        if not os.path.exists(seed_path):
-            return {"status": "error", "message": f"No seed data found"}
-        with open(seed_path, "r") as f:
-            cards_data = json.load(f)
+    except ImportError as e:
+        return {"status": "error", "message": f"Cannot import seed data: {str(e)[:200]}"}
     
     if not cards_data:
-        return {"status": "error", "message": "Seed file is empty"}
+        return {"status": "error", "message": "No seed data available"}
     
     saved = 0
     errors = []
@@ -99,33 +104,22 @@ async def seed_data():
                     if existing.scalar_one_or_none():
                         continue
                 
-                # Handle published_at conversion
-                published_at = item.get("published_at")
-                if published_at and isinstance(published_at, str):
-                    try:
-                        from datetime import datetime
-                        published_at = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-                    except (ValueError, TypeError):
-                        published_at = None
-                
                 card = NewsCard(
-                    title=item.get("title", "未知标题")[:500],
+                    title=(item.get("title") or "Untitled")[:500],
                     summary=item.get("summary"),
                     category=item.get("category", "其他"),
-                    source=item.get("source", "未知"),
-                    source_url=item.get("source_url", "")[:1000],
+                    source=item.get("source", "Unknown"),
+                    source_url=(item.get("source_url") or "")[:1000],
                     source_id=source_id,
-                    heat_score=item.get("heat_score", 0.0),
-                    ai_value_score=item.get("ai_value_score", 50.0),
-                    interest_tags=item.get("interest_tags", []),
+                    heat_score=float(item.get("heat_score", 0.0)),
+                    ai_value_score=float(item.get("ai_value_score", 50.0)),
+                    interest_tags=item.get("interest_tags") or [],
                     cover_image=item.get("cover_image"),
-                    published_at=published_at,
                 )
                 db.add(card)
                 saved += 1
             except Exception as e:
-                errors.append(f"{item.get('title','?')[:30]}: {str(e)[:80]}")
-                logger.error(f"种子数据保存失败: {str(e)[:200]}")
+                errors.append(f"{str(item.get('title','?'))[:30]}: {str(e)[:100]}")
         
         await db.commit()
     
