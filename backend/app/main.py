@@ -17,7 +17,9 @@ async def lifespan(app: FastAPI):
     from app.services.collector import DataCollector
     collector = DataCollector()
     await collector.start_scheduler(interval_hours=settings.COLLECTION_INTERVAL_HOURS)
-    logger.info("数据采集器调度器已启动")
+    # 启动时自动触发一次采集
+    asyncio.create_task(collector.run_collection())
+    logger.info("数据采集器调度器已启动，首次采集已触发")
     yield
     await collector.stop_scheduler()
 

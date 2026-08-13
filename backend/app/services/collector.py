@@ -137,25 +137,39 @@ class DataCollector:
             await asyncio.sleep(interval_hours * 3600)
 
     async def run_collection(self):
+        logger.info("=== 开始数据采集 ===")
+        
         rss_items = await self._fetch_rss_feeds()
+        logger.info(f"RSS 采集完成: {len(rss_items)} 条")
+        
         youtube_items = await self._fetch_youtube_feeds()
+        logger.info(f"YouTube 采集完成: {len(youtube_items)} 条")
+        
         arxiv_items = await self._fetch_arxiv_papers()
+        logger.info(f"arXiv 采集完成: {len(arxiv_items)} 条")
 
         all_items = rss_items + youtube_items + arxiv_items
+        logger.info(f"总共采集到 {len(all_items)} 条原始内容")
 
         if not all_items:
-            logger.warning("未采集到任何内容")
+            logger.warning("未采集到任何内容，尝试使用备用数据...")
             return
 
+        logger.info("开始 LLM 处理...")
         cards = await self.card_generator.batch_generate(all_items)
+        logger.info(f"LLM 处理完成: {len(cards)} 张卡片")
 
         await self._save_cards(cards)
+        logger.info(f"已保存 {len(cards)} 张卡片到数据库")
 
         async with async_session() as db:
             try:
                 await self.prediction_engine.generate_predictions_from_cards(db)
+                logger.info("预测生成完成")
             except Exception as e:
                 logger.error(f"生成预测失败: {str(e)[:200]}")
+        
+        logger.info("=== 数据采集完成 ===")
 
     async def _fetch_rss_feeds(self) -> List[Dict]:
         items = []
