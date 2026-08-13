@@ -29,8 +29,28 @@ export default function AuthPage() {
       }
       router.push('/news');
     } catch (e: any) {
-      const msg = e?.response?.data?.detail || e.message;
-      setError(msg || '操作失败');
+      const raw = e?.response?.data?.detail ?? e?.message ?? '操作失败';
+      const msg = (() => {
+        try {
+          // FastAPI ValidationError: detail 是 [{loc,msg,type}]
+          if (Array.isArray(raw) && raw.length) {
+            return raw
+              .map((it: any) => {
+                const field = Array.isArray(it?.loc) ? it.loc[it.loc.length - 1] : '';
+                const msg = it?.msg || String(it);
+                return field ? `${field}: ${msg}` : msg;
+              })
+              .join('；');
+          }
+          if (typeof raw === 'object' && raw !== null) {
+            return raw.msg || raw.message || JSON.stringify(raw);
+          }
+          return String(raw ?? '操作失败');
+        } catch {
+          return '操作失败，请稍后重试';
+        }
+      })();
+      setError(msg);
     } finally {
       setLoading(false);
     }
