@@ -73,11 +73,18 @@ async def trigger_collection():
 @app.post("/api/admin/seed-data")
 async def seed_data():
     seed_path = os.path.join(os.path.dirname(__file__), "..", "seed_data.json")
+    logger.info(f"Seed path: {seed_path}, exists: {os.path.exists(seed_path)}")
     if not os.path.exists(seed_path):
-        return {"status": "error", "message": "seed_data.json not found"}
+        return {"status": "error", "message": f"seed_data.json not found at {seed_path}"}
     
-    with open(seed_path, "r") as f:
-        cards_data = json.load(f)
+    try:
+        with open(seed_path, "r") as f:
+            cards_data = json.load(f)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to read seed file: {str(e)[:200]}"}
+    
+    if not cards_data:
+        return {"status": "error", "message": "Seed file is empty"}
     
     saved = 0
     errors = []
