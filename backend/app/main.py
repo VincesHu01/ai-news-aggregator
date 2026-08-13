@@ -58,8 +58,8 @@ async def trigger_collection():
     from app.services.collector import DataCollector
     collector = DataCollector()
     try:
-        await collector.run_collection()
-        return {"status": "ok", "message": "Collection completed"}
+        asyncio.create_task(collector.run_collection())
+        return {"status": "ok", "message": "Collection started in background"}
     except Exception as e:
         return {"status": "error", "message": str(e)[:200]}
 
