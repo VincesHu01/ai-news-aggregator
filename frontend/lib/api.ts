@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'ax
 import type {
   TokenResponse,
   User,
+  NewsCard as NewsCardType,
   NewsCardListResponse,
   ReadingResponse,
   PointBalanceResponse,
@@ -19,7 +20,9 @@ import type {
   UseInvitationResponse,
 } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api';
+const API_BASE_URL =
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) ||
+  'https://ai-news-db-egqx.onrender.com/api';
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -134,6 +137,11 @@ export async function getNews(page = 1, pageSize = 20): Promise<NewsCardListResp
   return resp as unknown as NewsCardListResponse;
 }
 
+export async function getNewsCard(cardId: string): Promise<NewsCardType> {
+  const resp = await apiClient.get(`/news/${cardId}`);
+  return resp as unknown as NewsCardType;
+}
+
 export async function markAsRead(cardId: string, readDuration: number): Promise<ReadingResponse> {
   const resp = await apiClient.post(`/news/${cardId}/read`, {
     read_duration: readDuration,
@@ -222,6 +230,12 @@ export async function createInvitation(rewardPoints = 50): Promise<InvitationRes
 export async function useInvitation(inviteCode: string): Promise<UseInvitationResponse> {
   const resp = await apiClient.post(`/shares/invite/${inviteCode}/use`);
   return resp as unknown as UseInvitationResponse;
+}
+
+// Public stats
+export async function getPublicStats(): Promise<{ news_count: number; users_count: number; bets_count: number }> {
+  const resp = await apiClient.get('/public/stats');
+  return resp as unknown as { news_count: number; users_count: number; bets_count: number };
 }
 
 export default apiClient;

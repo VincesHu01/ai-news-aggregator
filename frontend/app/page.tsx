@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Zap, ArrowRight, Sparkles, TrendingUp, Users, Newspaper } from 'lucide-react';
+import { Zap, ArrowRight, Sparkles, TrendingUp, Users, Newspaper, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { getPublicStats } from '@/lib/api';
 
 export default function LandingPage() {
   const features = [
@@ -11,6 +13,22 @@ export default function LandingPage() {
     { icon: TrendingUp, title: '预测市场', desc: '对 AI 趋势进行预测，赚取积分奖励' },
     { icon: Users, title: '社区排行榜', desc: '与全球 AI 爱好者同台竞技' }
   ];
+
+  const [stats, setStats] = useState<{ news_count: number; users_count: number; bets_count: number } | null>(null);
+
+  useEffect(() => {
+    getPublicStats()
+      .then(setStats)
+      .catch(() => setStats({ news_count: 0, users_count: 0, bets_count: 0 }));
+  }, []);
+
+  const formatNumber = (n: number) => {
+    if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, '') + 'W';
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    return n.toString();
+  };
+
+  const realStats = stats ?? { news_count: 0, users_count: 0, bets_count: 0 };
 
   return (
     <main className="min-h-screen bg-background relative overflow-hidden">
@@ -130,18 +148,26 @@ export default function LandingPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1 }}
-          className="grid grid-cols-3 gap-8 sm:gap-16 mt-20 text-center"
+          className="grid grid-cols-3 gap-4 sm:gap-16 mt-20 text-center"
         >
-          {[
-            { label: '每日资讯', value: '500+' },
-            { label: '注册用户', value: '10K+' },
-            { label: '预测成交', value: '50K+' }
-          ].map((stat) => (
-            <div key={stat.label}>
-              <div className="text-3xl sm:text-4xl font-bold gradient-text-primary">{stat.value}</div>
-              <div className="text-muted text-sm mt-1">{stat.label}</div>
-            </div>
-          ))}
+          {stats === null ? (
+            [0, 1, 2].map((i) => (
+              <div key={i} className="flex flex-col items-center gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ))
+          ) : (
+            [
+              { label: '资讯总数', value: formatNumber(realStats.news_count) },
+              { label: '注册用户', value: formatNumber(realStats.users_count) },
+              { label: '预测参与', value: formatNumber(realStats.bets_count) }
+            ].map((stat) => (
+              <div key={stat.label}>
+                <div className="text-2xl sm:text-4xl font-bold gradient-text-primary">{stat.value}</div>
+                <div className="text-muted text-sm mt-1">{stat.label}</div>
+              </div>
+            ))
+          )}
         </motion.div>
       </section>
 

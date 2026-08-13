@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, Bookmark, Share2, Sparkles, Flame, Clock, ExternalLink, Tag, Copy, Check, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { NewsCard as NewsCardType, ReadingResponse } from '@/lib/types';
 import { markAsRead, drawCard, isAuthenticated, generateShare } from '@/lib/api';
 
@@ -49,6 +50,7 @@ function getGradient(cardId: string): [string, string] {
 }
 
 export default function NewsCard({ card, index, isActive, onSwipe, onReward }: NewsCardProps) {
+  const router = useRouter();
   const [liked, setLiked] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
   const [showReward, setShowReward] = useState<ReadingResponse | null>(null);
@@ -236,7 +238,11 @@ export default function NewsCard({ card, index, isActive, onSwipe, onReward }: N
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-2xl sm:text-3xl font-bold text-white mb-3 leading-tight"
+            className="text-2xl sm:text-3xl font-bold text-white mb-3 leading-tight cursor-pointer hover:text-primary transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/news/${card.id}`);
+            }}
           >
             {card.title}
           </motion.h2>
