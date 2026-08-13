@@ -119,7 +119,7 @@ async def get_heatmap(
 async def get_card(
     card_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     result = await db.execute(select(NewsCard).where(NewsCard.id == card_id))
     card = result.scalar_one_or_none()
@@ -127,12 +127,14 @@ async def get_card(
     if not card:
         raise HTTPException(status_code=404, detail="卡片不存在")
 
-    read_query = select(ReadingRecord).where(
-        ReadingRecord.user_id == current_user.id,
-        ReadingRecord.card_id == card_id,
-    )
-    read_result = await db.execute(read_query)
-    is_read = read_result.scalar_one_or_none() is not None
+    is_read = False
+    if current_user:
+        read_query = select(ReadingRecord).where(
+            ReadingRecord.user_id == current_user.id,
+            ReadingRecord.card_id == card_id,
+        )
+        read_result = await db.execute(read_query)
+        is_read = read_result.scalar_one_or_none() is not None
 
     card_data = NewsCardResponse.model_validate(card)
     card_data.is_read = is_read
