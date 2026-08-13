@@ -40,3 +40,4 @@ temp/
 
 # Node.js tools
 .tools/
+seed_inline.json
