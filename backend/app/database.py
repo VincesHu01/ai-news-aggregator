@@ -13,6 +13,9 @@ def _create_engine():
             connect_args={"check_same_thread": False},
         )
     else:
+        # 确保使用 asyncpg 异步驱动
+        if url.startswith("postgresql://") and "asyncpg" not in url:
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return create_async_engine(
             url,
             echo=False,
