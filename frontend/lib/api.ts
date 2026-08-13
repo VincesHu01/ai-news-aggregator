@@ -20,9 +20,70 @@ import type {
   UseInvitationResponse,
 } from './types';
 
-const API_BASE_URL =
-  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) ||
-  'https://ai-news-db-egqx.onrender.com/api';
+const PROD_API_BASE_URL = 'https://ai-news-db-egqx.onrender.com/api';
+const LOCAL_DEV_API_BASE_URL = 'http://localhost:8000/api';
+
+/**
+ * 安全解析并校验前端 API_BASE_URL。
+ * 规则（兜底）：
+ *  - 任何以 "localhost" 或 "127.0.0.1" 开头的 URL，若当前 hostname 不是 localhost（即 Vercel/线上），
+ *    视为错误配置，强制切到生产地址，避免全站 404。
+ *  - 任何以 "/" 开头的相对路径（例如 "/api"），会打到 Vercel 自己，而 Vercel 下并无这些 route，
+ *    强制切到生产地址。
+ *  - 若环境变量非空但缺少结尾的 "/api" 路径段，自动补齐，避免 "/auth/register" 等请求被拼到根路径。
+ *  - 空字符串/undefined → 回退到生产地址。
+ */
+function resolveApiBaseUrl(): string {
+  const raw =
+    typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE_URL : undefined;
+
+  const isBrowser = typeof window !== 'undefined';
+  const isLocalDev =
+    isBrowser &&
+    Boolean(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  if (!raw || typeof raw !== 'string') {
+    return isLocalDev ? LOCAL_DEV_API_BASE_URL : PROD_API_BASE_URL;
+  }
+
+  let value = raw.trim();
+  if (!value) {
+    return isLocalDev ? LOCAL_DEV_API_BASE_URL : PROD_API_BASE_URL;
+  }
+
+  // 情况 1：相对路径（/api 或 /）→ 强制生产
+  if (value.startsWith('/')) {
+    return PROD_API_BASE_URL;
+  }
+
+  // 情况 2：线上环境但指向 localhost → 强制生产
+  const lower = value.toLowerCase();
+  if (!isLocalDev && (lower.includes('localhost') || lower.includes('127.0.0.1'))) {
+    return PROD_API_BASE_URL;
+  }
+
+  // 情况 3：缺少 "/api" 段 → 自动补齐
+  // 例如用户填 https://ai-news-db-egqx.onrender.com → 补成 /api
+  try {
+    const u = new URL(value);
+    if (!u.pathname || u.pathname === '/' || !u.pathname.endsWith('/api')) {
+      // 去掉末尾斜杠后补 /api
+      const base = u.origin;
+      let path = u.pathname.replace(/\/$/, '');
+      if (!path.endsWith('/api')) {
+        path = `${path}/api`;
+      }
+      value = `${base}${path}`;
+    }
+  } catch {
+    // 非 URL 格式 → 直接 fallback
+    return isLocalDev ? LOCAL_DEV_API_BASE_URL : PROD_API_BASE_URL;
+  }
+
+  return value;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -35,6 +96,27 @@ const apiClient: AxiosInstance = axios.create({
 
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    // 运行时二次兜底：确保最终请求 URL 永远不会打到 Vercel 同源或 localhost
+    if (typeof window !== 'undefined' && config.url) {
+      const finalUrl = (config.baseURL || API_BASE_URL) + config.url;
+      if (finalUrl.startsWith('/')) {
+        // 相对路径：强制改为生产绝对地址
+        config.baseURL = PROD_API_BASE_URL;
+      } else {
+        try {
+          const u = new URL(finalUrl);
+          const isLocalHostname = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+          const selfHost = window.location.hostname;
+          const onVercel = selfHost !== 'localhost' && selfHost !== '127.0.0.1';
+          if (isLocalHostname && onVercel) {
+            // 线上环境但请求打到 localhost，强制改生产
+            config.baseURL = PROD_API_BASE_URL;
+          }
+        } catch {
+          /* ignore malformed */
+        }
+      }
+    }
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('auth_token');
       if (token) {
