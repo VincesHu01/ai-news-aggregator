@@ -22,6 +22,28 @@ class PredictionEngine:
     ) -> List[Prediction]:
         from app.models.news import NewsCard
 
+        # 如果预测表为空，先注入一批种子预测，避免新用户/新部署看到空白页面
+        count_q = select(func.count(Prediction.id))
+        existing_count = await db.scalar(count_q) or 0
+        if existing_count == 0:
+            logger.info("预测表为空，注入 12 条种子预测...")
+            seeds = self._get_seed_predictions()
+            for q in seeds:
+                try:
+                    p = Prediction(
+                        question=q["question"],
+                        prediction_type=q.get("type", "yes_no"),
+                        options=q.get("options", ["是", "否"]),
+                        category=q.get("category", "综合"),
+                        status=PredictionStatus.PENDING.value,
+                        settlement_logic=q.get("settlement_logic", ""),
+                        expires_at=q.get("expires_at"),
+                    )
+                    db.add(p)
+                except Exception as e:
+                    logger.error(f"插入种子预测失败: {str(e)[:200]}")
+            await db.commit()
+
         recent_query = (
             select(NewsCard)
             .order_by(desc(NewsCard.created_at))
@@ -31,6 +53,7 @@ class PredictionEngine:
         recent_cards = recent_result.scalars().all()
 
         if len(recent_cards) < min_cards:
+            # 即使近期卡片少，也返回已存在的预测引用（通过上层重新加载，这里仅避免返回空）
             return []
 
         cards_data = [
@@ -39,6 +62,9 @@ class PredictionEngine:
         ]
 
         questions = await self.llm_processor.generate_prediction_questions(cards_data)
+        # LLM 失败兜底：生成 2-3 条基于标题关键词的默认预测
+        if not questions:
+            questions = self._fallback_predictions_from_cards(cards_data)
 
         predictions = []
         for q in questions:
@@ -51,7 +77,7 @@ class PredictionEngine:
                     status=PredictionStatus.PENDING.value,
                     llm_source_card_ids=[c["id"] for c in cards_data[:5]],
                     settlement_logic=q.get("settlement_logic", ""),
-                    expires_at=datetime.utcnow() + timedelta(hours=24),
+                    expires_at=q.get("expires_at") or (datetime.utcnow() + timedelta(hours=24)),
                 )
                 db.add(prediction)
                 predictions.append(prediction)
@@ -64,6 +90,160 @@ class PredictionEngine:
                 await db.refresh(p)
 
         return predictions
+
+    # --- 种子预测 & 兜底 ---
+    @staticmethod
+    def _get_seed_predictions() -> List[Dict]:
+        from datetime import timedelta
+        near_expire = datetime.utcnow() + timedelta(days=7)
+        mid_expire = datetime.utcnow() + timedelta(days=30)
+        far_expire = datetime.utcnow() + timedelta(days=90)
+        return [
+            {
+                "question": "2026 年 12 月 31 日前，OpenAI 会正式发布 GPT-5 吗？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "大模型",
+                "settlement_logic": "依据 OpenAI 官方发布会/GPT-5 产品正式上线公告判定",
+                "expires_at": far_expire,
+            },
+            {
+                "question": "Google Gemini（含后续版本）是否会在 2026 年 11 月前推出多模态能力超越 GPT-4o 的版本？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "大模型",
+                "settlement_logic": "以 Google DeepMind 官方博客或权威第三方评测 MMLU/MATH/Multimodal 榜单综合判定",
+                "expires_at": mid_expire,
+            },
+            {
+                "question": "2026 年内 Claude Code 或其升级版本的用户数是否超过 1000 万月活？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "AI编程工具",
+                "settlement_logic": "以 Anthropic 官方公布数据、或外部权威调研机构（如 SimilarWeb/SensorTower）数据为准",
+                "expires_at": far_expire,
+            },
+            {
+                "question": "2026 年 10 月 1 日前，DeepSeek 的开源大模型（≥70B 参数级）是否进入 Hugging Face 热门排行榜 Top 5？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "大模型",
+                "settlement_logic": "以 Hugging Face 官方 7 日下载/点赞/收藏综合榜单公开数据为依据",
+                "expires_at": mid_expire,
+            },
+            {
+                "question": "xAI 的 Grok 系列是否会在 2026 年 9 月前开源任意一款核心预训练模型权重？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "开源",
+                "settlement_logic": "以 xAI 官方 GitHub 账号发布模型权重、或 Elon Musk 官方公开确认视为成立",
+                "expires_at": mid_expire,
+            },
+            {
+                "question": "Cursor 是否在 2026 年底之前推出中文独立版本（即非英文软件汉化版）？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "AI编程工具",
+                "settlement_logic": "以 Anysphere/Cursor 团队发布面向中文用户的独立发行版或独立中文社区版（非语言包汉化）为准",
+                "expires_at": far_expire,
+            },
+            {
+                "question": "到 2026 年 12 月，全球 AI 监管法案（例如欧盟 AI Act 实际执行）是否会对大模型推理实施强制成本？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "政策",
+                "settlement_logic": "以欧盟、美国国会或中国发布正式立法/法规并开始生效的官方公告为准",
+                "expires_at": far_expire,
+            },
+            {
+                "question": "Transformer 架构是否仍是 2026 年主流大模型的核心架构？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "AI研究",
+                "settlement_logic": "以 OpenAI / Google DeepMind / Anthropic / Meta 四个厂商中任意三家发布的最主流旗舰模型公开架构说明为准，三家仍然是 Transformer 即为成立",
+                "expires_at": far_expire,
+            },
+            {
+                "question": "2026 年第三季度末，是否会有一款「端侧运行 ≥ 100B 参数 LLM」的消费级手机芯片公开量产？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "AI芯片",
+                "settlement_logic": "以 Apple / Qualcomm / MediaTek 等手机 SoC 厂商公开的 NPU 规格或权威评测机构实测为准",
+                "expires_at": mid_expire,
+            },
+            {
+                "question": "2026 年底前，Meta 开源的 Llama 系列 ≥ 400B 级别是否有可商用版本？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "开源",
+                "settlement_logic": "以 Meta AI 官网及 Hugging Face 公开的 Model License 为准",
+                "expires_at": far_expire,
+            },
+            {
+                "question": "2026 年 8 月底，中国国产大模型（通义千问、Kimi、DeepSeek 等）在中文评测基准 CMMLU 平均得分是否 ≥ 90？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "大模型",
+                "settlement_logic": "以 CMMLU 官方榜单公开的 Top 10 国产模型平均分数（≥7B 模型组）为准",
+                "expires_at": near_expire,
+            },
+            {
+                "question": "2026 年 9 月 1 日前，AI 编程工具是否覆盖全球 ≥ 20% 专业开发者（按 GitHub/StackOverFlow 调研）？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "AI应用",
+                "settlement_logic": "以 Stack Overflow 2026 开发者调查 / GitHub Octoverse 官方数据为准",
+                "expires_at": near_expire,
+            },
+        ]
+
+    @staticmethod
+    def _fallback_predictions_from_cards(cards_data: List[Dict]) -> List[Dict]:
+        from datetime import timedelta
+        expires = datetime.utcnow() + timedelta(days=14)
+        # 简单基于输入卡片的关键词猜测 2 条预测
+        combined_title = " ".join(c.get("title", "") for c in cards_data[:5]).lower()
+        keywords = [
+            ("GPT", "2026 年内 GPT 系列模型是否会新增可公开调用的实时搜索联网能力？"),
+            ("Gemini", "Google Gemini 会在 2026 年推出支持长视频理解的版本吗？"),
+            ("Claude", "Claude 系列是否会在 2026 年推出开源版本？"),
+            ("DeepSeek", "DeepSeek 系列是否在 2026 年 Q3 前登顶任意权威中文大模型榜单 Top1？"),
+            ("Grok", "Grok 系列模型是否会在 2026 年接入 Twitter/X 主站搜索？"),
+            ("Cursor", "Cursor 在 2026 年内是否会上线多人协作实时结对编程功能？"),
+            ("Transformer", "2026 年内 Transformer 是否仍是 GPT/Gemini/Claude 三大系列的核心架构？"),
+            ("LLM", "2026 年底是否会有单模型参数规模超过 10 万亿的大模型？"),
+            ("Agent", "2026 年 Q3 前 AI Agent 是否开始进入普通消费者日常使用？"),
+        ]
+        picks = []
+        for kw, q in keywords:
+            if kw.lower() in combined_title and len(picks) < 3:
+                picks.append({
+                    "question": q,
+                    "type": "yes_no",
+                    "options": ["是", "否"],
+                    "category": "LLM兜底生成",
+                    "settlement_logic": f"依据公开权威来源判断：{kw} 相关",
+                    "expires_at": expires,
+                })
+        if not picks:
+            picks.append({
+                "question": "2026 年底，全球月活最大的 AI 对话产品是否仍是 ChatGPT？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "大模型",
+                "settlement_logic": "按官方公开月活数据或权威第三方市场调研（SimilarWeb/SensorTower）",
+                "expires_at": expires,
+            })
+            picks.append({
+                "question": "2026 年大模型推理成本是否会比 2025 年再下降 ≥ 50%？",
+                "type": "yes_no",
+                "options": ["是", "否"],
+                "category": "AI研究",
+                "settlement_logic": "对比公开的每 1000 token 推理成本中位数",
+                "expires_at": expires,
+            })
+        return picks
+
 
     async def calculate_odds(
         self,

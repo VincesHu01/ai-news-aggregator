@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -16,6 +16,10 @@ import {
   Heart,
   Bookmark,
   Share2,
+  Gift,
+  Trophy,
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import type { NewsCard as NewsCardType } from '@/lib/types';
 import { getNewsCard, isAuthenticated, markAsRead, isBookmarked, toggleBookmark } from '@/lib/api';
@@ -47,9 +51,20 @@ export default function NewsDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [liked, setLiked] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
-  const [readingSeconds, setReadingSeconds] = useState(0);
   const [readingReported, setReadingReported] = useState(false);
+  const [rewardToast, setRewardToast] = useState<{
+    visible: boolean;
+    points: number;
+    experience: number;
+    new_balance?: number;
+    alreadyRead?: boolean;
+  } | null>(null);
+  const readingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const readingSecRef = useRef(0); // ref 保存秒数，不触发每 1 秒重渲染
   const [shareOpen, setShareOpen] = useState(false);
+
+  // 读取时长进度条 UI 用，降低刷新频率：每 5 秒 setState 一次（不是每 1 秒）
+  const [readingSecDisplay, setReadingSecDisplay] = useState(0);
 
   useEffect(() => {
     const fetchCard = async () => {
@@ -69,32 +84,56 @@ export default function NewsDetailPage() {
     fetchCard();
   }, [cardId]);
 
-  // Track reading duration and report after 30s
+  // 阅读计时器：满 5 秒即上报（给足奖励）。>30s 继续计时但不再上报。
+  // 为避免闪动，不使用每 1 秒 setState 触发整页重渲染，改用 ref + 每 5 秒同步一次显示。
   useEffect(() => {
     if (!card || card.is_read || readingReported) return;
-    const timer = setInterval(() => {
-      setReadingSeconds((s) => s + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [card, readingReported]);
 
-  useEffect(() => {
-    if (readingReported || !card || card.is_read) return;
-    if (readingSeconds >= 30 && isAuthenticated()) {
-      const report = async () => {
-        try {
-          await markAsRead(card.id, readingSeconds);
-          setReadingReported(true);
-          if (card) {
-            setCard({ ...card, is_read: true });
-          }
-        } catch (e) {
-          console.error('Failed to mark as read:', e);
-        }
-      };
-      report();
-    }
-  }, [readingSeconds, card, readingReported]);
+    readingSecRef.current = 0;
+    setReadingSecDisplay(0);
+
+    readingTimerRef.current = setInterval(() => {
+      readingSecRef.current += 1;
+      const cur = readingSecRef.current;
+
+      if (cur % 5 === 0) {
+        setReadingSecDisplay(cur);
+      }
+
+      // 上报阈值：满 5 秒
+      if (!readingReported && cur >= 5 && isAuthenticated()) {
+        markAsRead(card.id, cur)
+          .then((resp) => {
+            const pt = resp?.points_earned ?? 0;
+            const ex = resp?.experience_earned ?? 0;
+            const already = pt === 0 && ex === 0;
+            setRewardToast({
+              visible: true,
+              points: pt,
+              experience: ex,
+              new_balance: resp?.new_balance,
+              alreadyRead: already,
+            });
+            setTimeout(() => {
+              setRewardToast((t) => (t ? { ...t, visible: false } : null));
+              setTimeout(() => setRewardToast(null), 500);
+            }, 2800);
+            setReadingReported(true);
+            setCard((prev) => (prev ? { ...prev, is_read: true } : prev));
+          })
+          .catch((e) => {
+            console.error('Failed to mark as read:', e);
+          });
+      }
+    }, 1000);
+
+    return () => {
+      if (readingTimerRef.current) {
+        clearInterval(readingTimerRef.current);
+        readingTimerRef.current = null;
+      }
+    };
+  }, [card, readingReported, cardId]);
 
   if (loading) {
     return (
@@ -278,6 +317,37 @@ export default function NewsDetailPage() {
             </div>
           )}
 
+          {/* Reading progress + Reward indicator（不闪动） */}
+          {!card.is_read ? (
+            <div className="mt-6 rounded-2xl border border-border bg-surface/40 p-4">
+              <div className="flex items-center justify-between text-xs text-muted mb-2">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>阅读奖励：满 5 秒 +5 积分 / +3 经验（阅读更久最高 3 倍）</span>
+                </div>
+                <span className="text-primary font-medium">
+                  {readingReported ? '奖励已发放' : `已阅读 ${readingSecDisplay} 秒`}
+                </span>
+              </div>
+              <div className="h-1.5 bg-black/30 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: 'linear-gradient(90deg, #00FFD1, #BF00FF)' }}
+                  initial={{ width: 0 }}
+                  animate={{ width: readingReported ? '100%' : `${Math.min(100, (readingSecDisplay / 5) * 100)}%` }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/10 p-4 flex items-center gap-3">
+              <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0" />
+              <div className="text-sm text-white/90">
+                你已经完整阅读过这篇资讯的奖励（积分+经验仅限首次阅读一次性发放）。
+              </div>
+            </div>
+          )}
+
           {/* Read Original CTA */}
           {card.source_url && (
             <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 border border-primary/20">
@@ -295,6 +365,59 @@ export default function NewsDetailPage() {
           )}
         </motion.div>
       </article>
+
+      {/* 阅读奖励 Toast（只弹一次） */}
+      <AnimatePresence>
+        {rewardToast && rewardToast.visible && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ duration: 0.35, type: 'spring' }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] w-[90%] max-w-sm"
+          >
+            <div className="glass-card rounded-2xl border border-primary/40 p-4 shadow-[0_0_30px_rgba(0,255,209,0.15)]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
+                    {rewardToast.alreadyRead ? <CheckCircle2 className="w-5 h-5 text-white" /> : <Trophy className="w-5 h-5 text-white" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    {rewardToast.alreadyRead ? (
+                      <>
+                        <div className="text-sm font-bold text-white mb-1">你已经领取过这篇资讯的奖励啦</div>
+                        <div className="text-xs text-muted">每篇资讯只发一次，快去发现新资讯吧～</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm font-bold text-white mb-1">阅读奖励已到账 🎉</div>
+                        <div className="flex flex-wrap gap-3 text-xs">
+                          <span className="flex items-center gap-1 text-primary font-medium">
+                            <Gift className="w-3.5 h-3.5" /> +{rewardToast.points} 积分
+                          </span>
+                          <span className="flex items-center gap-1 text-secondary font-medium">
+                            <Sparkles className="w-3.5 h-3.5" /> +{rewardToast.experience} 经验
+                          </span>
+                          {typeof rewardToast.new_balance === 'number' && (
+                            <span className="text-muted">当前积分余额 {rewardToast.new_balance}</span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setRewardToast(null)}
+                  className="w-7 h-7 rounded-lg hover:bg-surface flex items-center justify-center text-muted hover:text-white flex-shrink-0"
+                  aria-label="关闭"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <ShareDialog
         isOpen={shareOpen}

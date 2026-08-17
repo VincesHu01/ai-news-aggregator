@@ -135,26 +135,43 @@ apiClient.interceptors.response.use(
     return response.data;
   },
   (error: AxiosError) => {
+    // 统一把 401 转成"请先登录"的文本错误，避免前端页面永远显示"Network Error"
+    const makePrettyError = (msg: string, status?: number) => {
+      const err = new Error(msg) as any;
+      err.response = error.response || { data: { detail: msg }, status: status || 0 };
+      err.message = msg;
+      err.status = status || (error.response as any)?.status || 0;
+      return err;
+    };
+
     if (error.response) {
-      switch (error.response.status) {
-        case 401:
+      const status = (error.response as any).status;
+      const detail = ((error.response as any).data as any)?.detail;
+      switch (status) {
+        case 401: {
           if (typeof window !== 'undefined') {
             localStorage.removeItem('auth_token');
             localStorage.removeItem('auth_user');
           }
-          break;
+          return Promise.reject(makePrettyError(detail || '请先登录', 401));
+        }
         case 403:
-          console.warn('Access forbidden:', error.config?.url);
-          break;
+          return Promise.reject(makePrettyError(detail || '权限不足', 403));
         case 429:
-          console.warn('Rate limited:', error.config?.url);
-          break;
+          return Promise.reject(makePrettyError(detail || '请求过于频繁，请稍后再试', 429));
         case 500:
-          console.error('Server error:', error.config?.url);
+          return Promise.reject(makePrettyError(detail || '服务器内部错误，请稍后重试', 500));
+        default:
+          if (detail) {
+            return Promise.reject(makePrettyError(detail, status));
+          }
+          console.warn('HTTP error:', status, error.config?.url);
           break;
       }
     } else if (error.request) {
-      console.error('Network error:', error.message);
+      // 真实 network 层错误
+      const urlHint = error.config?.url ? `（${error.config.url}）` : '';
+      return Promise.reject(makePrettyError(`无法连接到后端服务${urlHint}。请检查网络或稍后重试。`, 0));
     }
     return Promise.reject(error);
   }

@@ -61,7 +61,11 @@ class RewardsEngine:
     def calculate_reading_rewards(
         self, read_duration: int
     ) -> Tuple[int, int]:
+        if read_duration < 5:
+            return 0, 0
         duration_multiplier = min(read_duration / 30.0, 3.0)
+        # 满 5 秒即发放完整基准奖励（不再 *read_duration/30 的小于1惩罚）
+        duration_multiplier = max(duration_multiplier, 1.0)
         points = int(self.READING_BASE_POINTS * duration_multiplier)
         experience = int(self.READING_BASE_EXPERIENCE * duration_multiplier)
         return points, experience

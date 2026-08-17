@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # 任何两次采集之间的最小间隔（无论是 cron 还是按需访问触发）
 # 防止：多个用户同时打开首页 → 10 秒内连抓 10 次 → 大量重复 LLM 调用花真钱。
-MIN_COLLECTION_INTERVAL_MINUTES = 20
+MIN_COLLECTION_INTERVAL_MINUTES = 3
 
 
 RSS_FEEDS = [
@@ -60,6 +60,63 @@ RSS_FEEDS = [
         "url": "https://news.google.com/rss/search?q=artificial+intelligence&hl=en-US&gl=US&ceid=US:en",
         "category": "AI产业",
     },
+    # ===== 大模型专门源（占比目标 ≥60%） =====
+    {
+        "name": "GN - ChatGPT GPT",
+        "url": "https://news.google.com/rss/search?q=ChatGPT+OR+OpenAI+OR+GPT-4+OR+GPT-5&hl=en-US&gl=US&ceid=US:en",
+        "category": "AI工具",
+        "_llm_bonus": True,
+    },
+    {
+        "name": "GN - Gemini",
+        "url": "https://news.google.com/rss/search?q=Gemini+OR+Google+AI+OR+Gemini+2+OR+Gemini+Advanced&hl=en-US&gl=US&ceid=US:en",
+        "category": "AI工具",
+        "_llm_bonus": True,
+    },
+    {
+        "name": "GN - Claude Anthropic",
+        "url": "https://news.google.com/rss/search?q=Claude+OR+Anthropic+OR+Claude+3.5+OR+Claude+Sonnet+OR+Claude+Opus&hl=en-US&gl=US&ceid=US:en",
+        "category": "AI工具",
+        "_llm_bonus": True,
+    },
+    {
+        "name": "GN - DeepSeek",
+        "url": "https://news.google.com/rss/search?q=DeepSeek+OR+DeepSeek-Coder+OR+DeepSeek-V3+OR+DeepSeek-R1&hl=en-US&gl=US&ceid=US:en",
+        "category": "AI工具",
+        "_llm_bonus": True,
+    },
+    {
+        "name": "GN - Grok xAI",
+        "url": "https://news.google.com/rss/search?q=Grok+OR+xAI+OR+Musk+AI+OR+Grok-3&hl=en-US&gl=US&ceid=US:en",
+        "category": "AI工具",
+        "_llm_bonus": True,
+    },
+    {
+        "name": "GN - Cursor Code",
+        "url": "https://news.google.com/rss/search?q=Cursor+AI+OR+Cursor+editor+OR+Anysphere&hl=en-US&gl=US&ceid=US:en",
+        "category": "AI应用",
+        "_llm_bonus": True,
+    },
+    {
+        "name": "GN - LLM 技术",
+        "url": "https://news.google.com/rss/search?q=large+language+model+OR+LLM+OR+Mixture+of+Experts+OR+transformer+OR+RLHF&hl=en-US&gl=US&ceid=US:en",
+        "category": "AI研究",
+        "_llm_bonus": True,
+    },
+]
+
+# 大模型关键词，命中标题/内容时 +25% AI 价值分加权
+LLM_KEYWORDS = [
+    "chatgpt", "openai", "gpt", "sora",
+    "gemini", "google ai", "bard", "palm",
+    "claude", "anthropic", "sonnet", "opus",
+    "deepseek", "deepseek-coder", "deepseek-v3", "deepseek-r1",
+    "grok", "xai", "elon musk ai",
+    "cursor", "anysphere",
+    "llm", "large language model", "transformer", "rlhf", "mo e", "mixture of experts",
+    "multi-modal", "multimodal", "rag", "in-context learning",
+    "qwen", "通义", "tongyi", "千问", "difuse",
+    "kimi", "moonshot",
 ]
 
 YOUTUBE_FEEDS = [
@@ -258,7 +315,26 @@ class DataCollector:
 
         logger.info("开始 LLM 处理...")
         cards = await self.card_generator.batch_generate(all_items)
-        logger.info(f"LLM 处理完成: {len(cards)} 张卡片")
+        # 大模型聚焦：对命中关键词的卡片 +25% AI 价值分，确保推送 Top 8 中 ≥60% 是大模型相关
+        for card in cards:
+            title_content = (
+                str(card.get("title", "")).lower()
+                + " "
+                + str(card.get("summary", "")).lower()
+                + " "
+                + " ".join(str(t).lower() for t in card.get("interest_tags") or [])
+            )
+            is_llm = any(kw in title_content for kw in LLM_KEYWORDS)
+            if is_llm:
+                base = float(card.get("ai_value_score") or 50.0)
+                card["ai_value_score"] = round(min(base * 1.25, 100.0), 2)
+                # 额外保证 interest_tags 中至少体现一个大模型词
+                tags = card.get("interest_tags") or []
+                if "大模型" not in tags:
+                    tags = list(tags) + ["大模型"]
+                    card["interest_tags"] = tags[:6]
+            card["_is_llm_related"] = is_llm
+        logger.info(f"LLM 处理完成: {len(cards)} 张卡片（其中大模型相关 {sum(1 for c in cards if c.get('_is_llm_related'))} 张）")
 
         saved_count = await self._save_cards(cards)
         logger.info(f"已保存 {saved_count} 张新卡片到数据库（本次采集总量 {len(cards)}）")

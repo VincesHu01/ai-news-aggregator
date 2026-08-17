@@ -195,15 +195,26 @@ export default function CardsPage() {
               </div>
               {loading ? (
                 <div className="h-10 bg-surface animate-pulse rounded-lg mb-4" />
+              ) : !isAuthenticated() ? (
+                <div className="glass-card rounded-xl p-4 mb-4 border border-primary/30">
+                  <div className="text-sm text-white font-bold mb-1">🎁 收集卡牌需要登录</div>
+                  <div className="text-xs text-muted mb-3">登录后抽卡、合成稀有卡、赠送好友等全部功能即可解锁～</div>
+                  <button
+                    onClick={() => router.push('/auth')}
+                    className="w-full py-2 rounded-xl btn-neon btn-neon-primary text-sm font-bold"
+                  >
+                    立即登录
+                  </button>
+                </div>
               ) : error ? (
-                <div className="text-accent text-sm flex items-center gap-2 mb-4">
-                  <AlertCircle className="w-4 h-4" />
-                  {error}
-                  {!isAuthenticated() && (
-                    <button onClick={() => router.push('/auth')} className="ml-2 underline text-primary">
-                      去登录
-                    </button>
-                  )}
+                <div className="text-accent text-sm flex flex-col gap-2 mb-4">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>{error}</span>
+                  </div>
+                  <button onClick={loadData} className="self-start text-xs underline text-primary hover:opacity-80">
+                    重新加载
+                  </button>
                 </div>
               ) : (
                 <>

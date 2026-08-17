@@ -200,17 +200,78 @@ class PushService:
     # Internal helpers
     # ------------------------------------------------------------------
     async def _load_candidate_cards(self, db) -> List[NewsCard]:
-        """选要推送的新闻：近 48 小时内，按 ai_value_score 降序，最多 8 条"""
+        """选要推送的新闻：近 48 小时内，按 ai_value_score 降序，最多 8 条。
+        重点聚焦大模型：从候选池中挑选出"大模型相关"卡片，至少占 Top 8 的 60%（≥ 5 条）。
+        大模型判定关键词与 collector 保持一致。
+        """
         from datetime import timedelta
+        from app.services.collector import LLM_KEYWORDS
+
         cutoff = datetime.utcnow() - timedelta(hours=48)
+        # 多取一些（24 条）再从中重新组合，避免直接 ORDER BY 时大模型卡不够
         stmt = (
             select(NewsCard)
             .where(NewsCard.published_at >= cutoff)
             .order_by(NewsCard.ai_value_score.desc(), NewsCard.heat_score.desc())
-            .limit(8)
+            .limit(24)
         )
         result = await db.execute(stmt)
-        return list(result.scalars().all())
+        pool = list(result.scalars().all())
+        if not pool:
+            return []
+
+        def _is_llm_card(c: NewsCard) -> bool:
+            text = (
+                f"{c.title or ''} {c.summary or ''} "
+                + " ".join(str(t) for t in (c.interest_tags or []))
+            ).lower()
+            return any(kw in text for kw in LLM_KEYWORDS)
+
+        llm_pool = [c for c in pool if _is_llm_card(c)]
+        non_llm_pool = [c for c in pool if not _is_llm_card(c)]
+
+        # 构造结果：优先大模型卡
+        target_total = min(8, len(pool))
+        target_llm = max(5, int(target_total * 0.6))  # ≥5 或 ≥60%
+
+        picked: List[NewsCard] = []
+        picked_ids: set = set()
+
+        def _take(src, max_n):
+            for c in src:
+                if len(picked) >= target_total:
+                    return
+                if len(picked) - max_n >= 0 and (len(picked) - (sum(1 for x in picked if _is_llm_card(x)))) == 0:
+                    pass
+                if id(c) in picked_ids:
+                    continue
+                picked_ids.add(id(c))
+                picked.append(c)
+                if len(picked) >= target_total:
+                    return
+
+        # 先按要求放 ≥target_llm 张大模型卡
+        for c in llm_pool:
+            if len([x for x in picked if _is_llm_card(x)]) >= target_llm:
+                break
+            if len(picked) >= target_total:
+                break
+            picked_ids.add(id(c))
+            picked.append(c)
+
+        # 然后按 ai_value_score 把剩余的补满（不管是否大模型，保持高价值在前面）
+        combined_rest = sorted(pool, key=lambda c: (c.ai_value_score or 0), reverse=True)
+        for c in combined_rest:
+            if len(picked) >= target_total:
+                break
+            if id(c) in picked_ids:
+                continue
+            picked_ids.add(id(c))
+            picked.append(c)
+
+        # 最终按 ai_value_score 排序渲染（高价值在前）
+        picked.sort(key=lambda c: (c.ai_value_score or 0), reverse=True)
+        return picked
 
     def _build_common_title_summary(self, cards: List[NewsCard], trigger_type: str) -> (str, str):
         trigger_labels = {

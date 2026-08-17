@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import {
@@ -49,6 +49,7 @@ const navSections = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [authed, setAuthed] = useState(false);
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,17 +63,22 @@ export default function Sidebar() {
       const isAuth = isAuthenticated();
       setAuthed(isAuth);
       if (!isAuth) {
+        setTasks([]);
         setLoading(false);
         return;
       }
       try {
         setLoading(true);
+        setMessage(null);
         const data = await getDailyTasks();
         if (mounted) {
-          setTasks(data.tasks);
+          setTasks(data.tasks || []);
         }
-      } catch (err) {
-        console.error('Failed to fetch daily tasks:', err);
+      } catch (err: unknown) {
+        // 401 等错误不要把 tasks 清空成"暂无任务"，保留一个提示消息
+        const msg = err instanceof Error ? err.message : '任务加载失败';
+        setTasks([]);
+        setMessage({ type: 'error', text: msg });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -83,7 +89,7 @@ export default function Sidebar() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [getDailyTasks]);
 
   const handleClaim = async (taskId: string) => {
     try {
@@ -168,16 +174,34 @@ export default function Sidebar() {
           </div>
 
           {!authed ? (
-            <div className="text-center py-3 text-xs text-muted">
-              登录后查看任务
+            <div className="text-center py-3 space-y-2">
+              <div className="text-xs text-muted">登录后查看任务进度与领取奖励</div>
+              <button
+                onClick={() => router.push('/auth')}
+                className="w-full py-2 rounded-lg text-xs font-bold btn-neon btn-neon-primary"
+              >
+                立即登录
+              </button>
             </div>
           ) : loading ? (
             <div className="text-center py-3 text-xs text-muted">
               加载中...
             </div>
+          ) : message?.type === 'error' && tasks.length === 0 ? (
+            <div className="text-center py-3 space-y-2">
+              <div className="text-xs text-accent">{message.text}</div>
+              {/登录|请先|401|token|expired/i.test(message.text) && (
+                <button
+                  onClick={() => router.push('/auth')}
+                  className="w-full py-2 rounded-lg text-xs font-bold btn-neon btn-neon-primary"
+                >
+                  去登录
+                </button>
+              )}
+            </div>
           ) : tasks.length === 0 ? (
             <div className="text-center py-3 text-xs text-muted">
-              暂无任务
+              今日还没有任务，稍后再来～
             </div>
           ) : (
             <div className="space-y-3">
