@@ -18,7 +18,8 @@ import {
   Share2,
 } from 'lucide-react';
 import type { NewsCard as NewsCardType } from '@/lib/types';
-import { getNewsCard, isAuthenticated, markAsRead } from '@/lib/api';
+import { getNewsCard, isAuthenticated, markAsRead, isBookmarked, toggleBookmark } from '@/lib/api';
+import ShareDialog from '@/components/ShareDialog';
 
 const categoryColors: Record<string, string> = {
   hot: '#FF006E',
@@ -48,6 +49,7 @@ export default function NewsDetailPage() {
   const [bookmarked, setBookmarked] = useState(false);
   const [readingSeconds, setReadingSeconds] = useState(0);
   const [readingReported, setReadingReported] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     const fetchCard = async () => {
@@ -56,6 +58,7 @@ export default function NewsDetailPage() {
       try {
         const data = await getNewsCard(cardId);
         setCard(data);
+        setBookmarked(isBookmarked(cardId));
       } catch (e: any) {
         const msg = e?.response?.data?.detail || e?.message || '加载失败';
         setError(msg);
@@ -159,7 +162,7 @@ export default function NewsDetailPage() {
               <Heart className={`w-4 h-4 ${liked ? 'fill-current' : ''}`} />
             </button>
             <button
-              onClick={() => setBookmarked(!bookmarked)}
+              onClick={() => setBookmarked(toggleBookmark(card.id))}
               className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
                 bookmarked ? 'bg-primary/20 text-primary' : 'bg-surface text-muted hover:text-white'
               }`}
@@ -167,13 +170,7 @@ export default function NewsDetailPage() {
               <Bookmark className={`w-4 h-4 ${bookmarked ? 'fill-current' : ''}`} />
             </button>
             <button
-              onClick={() => {
-                if (typeof navigator !== 'undefined' && navigator.share) {
-                  navigator.share({ title: card.title, text: card.summary || '', url: window.location.href });
-                } else if (typeof window !== 'undefined') {
-                  navigator.clipboard.writeText(window.location.href);
-                }
-              }}
+              onClick={() => setShareOpen(true)}
               className="w-9 h-9 rounded-full bg-surface text-muted hover:text-white flex items-center justify-center transition-colors"
             >
               <Share2 className="w-4 h-4" />
@@ -298,6 +295,14 @@ export default function NewsDetailPage() {
           )}
         </motion.div>
       </article>
+
+      <ShareDialog
+        isOpen={shareOpen}
+        onClose={() => setShareOpen(false)}
+        targetType="news"
+        targetId={card.id}
+        title={card.title}
+      />
     </main>
   );
 }

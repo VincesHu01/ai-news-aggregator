@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Search, Zap, Bell, User, Menu, X, LogIn } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { isAuthenticated, getStoredUser, logout } from '@/lib/api';
+import { isAuthenticated, getStoredUser, logout, listPushHistory } from '@/lib/api';
 
 const categories = [
   { id: 'hot', label: '🔥 热门' },
@@ -103,10 +103,14 @@ export default function Header({
               </div>
             )}
 
-            <button className="p-2 rounded-full hover:bg-white/5 text-muted hover:text-white transition-colors relative">
+            <Link
+              href="/push-history"
+              className="p-2 rounded-full hover:bg-white/5 text-muted hover:text-white transition-colors relative"
+              title="历史推送"
+            >
               <Bell className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full animate-pulse" />
-            </button>
+            </Link>
 
             {authed ? (
               <Link

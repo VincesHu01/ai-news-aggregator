@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 import enum
 
@@ -28,6 +28,8 @@ class TransactionType(str, enum.Enum):
     SHARE = "share"
     INVITE = "invite"
     ADMIN = "admin"
+    GIFT_CARD = "gift_card"
+    SYNTHESIS = "synthesis"
 
 
 class CardCollection(Base):
@@ -41,6 +43,19 @@ class CardCollection(Base):
     card_image = Column(String(1000), nullable=True)
     source_card_id = Column(String(36), ForeignKey("news_cards.id"), nullable=True)
     obtained_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # --- 丰富卡牌内容（类似哈利波特巧克力蛙卡牌） ---
+    # 卡牌类型：figure（人物）/ tech（技术）/ company（AI公司）/ ethics（AI伦理）/ event（里程碑事件）
+    card_type = Column(String(50), nullable=True)
+    # 简短描述（所有稀有度都有）
+    description = Column(Text, nullable=True)
+    # 背景故事/详细介绍（R 及以上才有）
+    lore = Column(Text, nullable=True)
+    # 思考题/趣味问答（SR 及以上才有）
+    trivia_question = Column(Text, nullable=True)
+    trivia_answer = Column(Text, nullable=True)
+    # 是否通过合成获得
+    is_synthesized = Column(Boolean, default=False, nullable=False)
 
     user = relationship("User", back_populates="card_collections")
 

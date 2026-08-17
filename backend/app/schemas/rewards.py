@@ -11,6 +11,12 @@ class CardCollectionResponse(BaseModel):
     card_image: Optional[str] = None
     source_card_id: Optional[str] = None
     obtained_at: datetime
+    card_type: Optional[str] = None
+    description: Optional[str] = None
+    lore: Optional[str] = None
+    trivia_question: Optional[str] = None
+    trivia_answer: Optional[str] = None
+    is_synthesized: bool = False
 
     class Config:
         from_attributes = True

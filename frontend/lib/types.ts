@@ -84,6 +84,12 @@ export interface CardCollection {
   card_image?: string | null;
   source_card_id?: string | null;
   obtained_at: string;
+  card_type?: string | null;
+  description?: string | null;
+  lore?: string | null;
+  trivia_question?: string | null;
+  trivia_answer?: string | null;
+  is_synthesized?: boolean;
 }
 
 export interface DrawCardResponse {

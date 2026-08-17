@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Zap, ArrowRight, Sparkles, TrendingUp, Users, Newspaper, Loader2 } from 'lucide-react';
+import { Zap, ArrowRight, Sparkles, TrendingUp, Users, Newspaper, Loader2, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { getPublicStats } from '@/lib/api';
+import { getPublicStats, publicTriggerCollection } from '@/lib/api';
 
 export default function LandingPage() {
   const features = [
@@ -15,6 +15,34 @@ export default function LandingPage() {
   ];
 
   const [stats, setStats] = useState<{ news_count: number; users_count: number; bets_count: number } | null>(null);
+  const [triggerMsg, setTriggerMsg] = useState<{ type: 'ok' | 'skip' | 'err'; text: string } | null>(null);
+
+  // 每次用户打开（挂载）首页：匿名触发一次采集+推送
+  // 服务端自带 20min 最小间隔，不用担心被刷
+  useEffect(() => {
+    let cancelled = false;
+    publicTriggerCollection()
+      .then((r) => {
+        if (cancelled) return;
+        if (r.status === 'ok') {
+          const saved = r.detail?.saved_cards ?? 0;
+          setTriggerMsg({
+            type: 'ok',
+            text: saved > 0 ? `✓ 后台已完成一轮采集，新增 ${saved} 条资讯并尝试推送` : '✓ 后台已完成一轮采集与推送，若 20 分钟内已跑过则会跳过。',
+          });
+        } else {
+          setTriggerMsg({ type: 'skip', text: r.detail?.reason || '最近已执行过采集，本次跳过。' });
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        const msg = e?.response?.data?.detail ?? e?.message ?? '请求失败';
+        setTriggerMsg({ type: 'err', text: `采集触发失败：${String(msg).slice(0, 60)}` });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     getPublicStats()
@@ -112,6 +140,28 @@ export default function LandingPage() {
               预测 AI 趋势
             </Link>
           </motion.div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.65 }}
+          className="mt-8 w-full max-w-3xl"
+        >
+          {triggerMsg && (
+            <div
+              className={`mx-auto flex items-center gap-2 text-sm rounded-xl px-4 py-3 border backdrop-blur ${
+                triggerMsg.type === 'ok'
+                  ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'
+                  : triggerMsg.type === 'skip'
+                  ? 'bg-sky-500/10 border-sky-400/30 text-sky-200'
+                  : 'bg-rose-500/10 border-rose-400/30 text-rose-200'
+              }`}
+            >
+              <RefreshCw className={`w-4 h-4 ${triggerMsg.type === 'err' ? '' : 'animate-spin-slow'}`} />
+              <span>{triggerMsg.text}</span>
+            </div>
+          )}
         </motion.div>
 
         <motion.div

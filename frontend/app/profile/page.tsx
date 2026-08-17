@@ -18,9 +18,20 @@ import {
   Calendar,
   Award,
   AlertCircle,
-  LogOut
+  LogOut,
+  Mail,
+  MessageCircle,
+  RadioTower,
+  BellRing,
+  CheckCircle2,
+  XCircle,
+  Info,
+  Send,
+  Loader2,
+  ShieldAlert,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import BottomNav from '@/components/layout/BottomNav';
 import Sidebar from '@/components/layout/Sidebar';
@@ -32,8 +43,71 @@ import {
   isAuthenticated,
   getStoredUser,
   logout as apiLogout,
+  getPushSettings,
+  updatePushSettings,
+  sendTestPushEmail,
+  type UserPushSettings as UserPushSettingsType,
 } from '@/lib/api';
 import type { User as UserType, PointBalanceResponse } from '@/lib/types';
+
+// 小组件：开关行（标题+说明+图标+右侧 Switch）
+function ToggleRow({
+  checked,
+  onChange,
+  title,
+  desc,
+  icon,
+  accentColor,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  title: string;
+  desc?: string;
+  icon?: React.ReactNode;
+  accentColor?: string;
+}) {
+  return (
+    <label className="flex items-start gap-3 cursor-pointer select-none group">
+      <div
+        className="mt-0.5 w-9 h-9 rounded-lg flex items-center justify-center border flex-shrink-0 transition-all"
+        style={{
+          background: checked ? `${accentColor || '#00FFD1'}22` : 'rgba(255,255,255,0.03)',
+          borderColor: checked ? `${accentColor || '#00FFD1'}55` : 'rgba(255,255,255,0.08)',
+          color: checked ? accentColor || '#00FFD1' : '#8888A0',
+        }}
+      >
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-medium text-white">{title}</div>
+          <Switch checked={checked} onChange={onChange} />
+        </div>
+        {desc && <div className="mt-1 text-xs text-muted leading-relaxed">{desc}</div>}
+      </div>
+    </label>
+  );
+}
+
+// 小组件：带样式的 switch 开关
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border border-white/10 transition-colors focus:outline-none ${
+        checked ? 'bg-gradient-to-r from-primary to-secondary' : 'bg-white/10'
+      }`}
+      style={checked ? { boxShadow: '0 0 12px rgba(0,255,209,0.4)' } : undefined}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+          checked ? 'translate-x-5' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
+  );
+}
 
 function levelTier(level: number): { name: string; color: string; desc: string } {
   if (level >= 50) return { name: 'AI 之神', color: '#FF006E', desc: '传说级段位，凤毛麟角' };
@@ -57,6 +131,12 @@ export default function ProfilePage() {
   const [lastCheckInDay, setLastCheckInDay] = useState<string | undefined>(undefined);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
 
+  // 推送设置
+  const [pushSettings, setPushSettings] = useState<UserPushSettingsType | null>(null);
+  const [savingPush, setSavingPush] = useState(false);
+  const [sendingTestMail, setSendingTestMail] = useState(false);
+  const [pushMsg, setPushMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
   const loadData = useCallback(async () => {
     if (!isAuthenticated()) {
       router.push('/auth');
@@ -67,10 +147,10 @@ export default function ProfilePage() {
     try {
       const u = getStoredUser();
       setUser(u);
-      const bal = await getBalance();
+      const [bal, ps] = await Promise.all([getBalance(), getPushSettings().catch(() => null)]);
       setBalance(bal);
+      if (ps) setPushSettings(ps);
       setStreakDays(bal.total_checkins > 0 ? Math.min(bal.total_checkins, 7) : 0);
-      // Approximate last checkin by checking if today has a checkin — we use the stored streak heuristic
       setLastCheckInDay(undefined);
     } catch (e: any) {
       setError(e?.response?.data?.detail || e?.message || '加载失败');
@@ -105,6 +185,41 @@ export default function ProfilePage() {
     if (confirm('确认退出登录？')) {
       apiLogout();
       router.push('/auth');
+    }
+  };
+
+  const updateSetting = async (patch: Partial<UserPushSettingsType>) => {
+    if (!pushSettings) return;
+    const prev = pushSettings;
+    const next = { ...pushSettings, ...patch };
+    setPushSettings(next);
+    setSavingPush(true);
+    setPushMsg(null);
+    try {
+      const saved = await updatePushSettings(patch as any);
+      setPushSettings({ ...next, ...saved });
+      setPushMsg({ kind: 'ok', text: '已保存推送设置' });
+    } catch (e: any) {
+      setPushSettings(prev);
+      setPushMsg({ kind: 'err', text: e?.response?.data?.detail || e?.message || '保存失败' });
+    } finally {
+      setSavingPush(false);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    setSendingTestMail(true);
+    setPushMsg(null);
+    try {
+      const r = await sendTestPushEmail();
+      // 同时刷新 email_verified 状态
+      const ps = await getPushSettings();
+      setPushSettings(ps);
+      setPushMsg({ kind: 'ok', text: r.message || '测试邮件已发送，请查收（可能在垃圾箱）' });
+    } catch (e: any) {
+      setPushMsg({ kind: 'err', text: e?.response?.data?.detail || e?.message || '发送失败' });
+    } finally {
+      setSendingTestMail(false);
     }
   };
 
@@ -300,6 +415,225 @@ export default function ProfilePage() {
                   </motion.div>
                 ))}
               </div>
+
+              {/* 推送设置面板 */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="glass-card rounded-2xl p-6 mb-6"
+              >
+                <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-11 h-11 rounded-xl flex items-center justify-center"
+                      style={{ background: 'linear-gradient(135deg, rgba(0,255,209,0.22), rgba(191,0,255,0.22))', border: '1px solid rgba(0,255,209,0.35)' }}
+                    >
+                      <BellRing className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">推送订阅设置</h3>
+                      <p className="text-sm text-muted">
+                        选择接收方式与触发时机，AI 高价值资讯将自动推送。
+                        <Link href="/push-history" className="ml-2 text-primary hover:underline inline-flex items-center gap-1">
+                          查看历史推送 <ChevronRight className="w-3 h-3" />
+                        </Link>
+                      </p>
+                    </div>
+                  </div>
+                  {savingPush && (
+                    <div className="inline-flex items-center gap-2 text-xs text-muted">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />保存中…
+                    </div>
+                  )}
+                </div>
+
+                {pushMsg && (
+                  <div
+                    className={`mb-4 rounded-xl px-4 py-3 text-sm flex items-start gap-2 border ${
+                      pushMsg.kind === 'ok'
+                        ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'
+                        : 'bg-rose-500/10 border-rose-400/30 text-rose-200'
+                    }`}
+                  >
+                    {pushMsg.kind === 'ok' ? (
+                      <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className="break-words whitespace-pre-line">{pushMsg.text}</div>
+                  </div>
+                )}
+
+                {!pushSettings ? (
+                  <div className="text-sm text-muted">加载推送设置失败，稍后可重试。</div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* 触发时机 */}
+                    <div className="rounded-xl border border-border bg-surface/40 p-4 space-y-3">
+                      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted">
+                        <RadioTower className="w-3.5 h-3.5" />
+                        触发时机（至少开启一种）
+                      </div>
+                      <ToggleRow
+                        checked={pushSettings.push_on_daily_cron}
+                        onChange={(v) => updateSetting({ push_on_daily_cron: v })}
+                        title="每日 00:00 准点推送"
+                        desc="本地时区 00:00:05 自动采集+AI 总结+推送。若 Render 免费实例休眠，将被「访问触发」兜底。"
+                        icon={<Calendar className="w-4 h-4" />}
+                        accentColor="#00FFD1"
+                      />
+                      <ToggleRow
+                        checked={pushSettings.push_on_visit}
+                        onChange={(v) => updateSetting({ push_on_visit: v })}
+                        title="有人访问网站时也给我推送"
+                        desc="只要有用户打开本站触发采集，就按你的订阅条件也发一份。注意：访问触发 20 分钟内只跑一次，避免被刷。"
+                        icon={<RadioTower className="w-4 h-4" />}
+                        accentColor="#BF00FF"
+                      />
+                    </div>
+
+                    {/* 邮件推送 */}
+                    <div className="rounded-xl border border-border bg-surface/40 p-4 space-y-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted">
+                          <Mail className="w-3.5 h-3.5" />邮件推送
+                        </div>
+                        <Switch checked={pushSettings.email_enabled} onChange={(v) => updateSetting({ email_enabled: v })} />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <div className="flex-1 relative">
+                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+                          <input
+                            type="email"
+                            defaultValue={pushSettings.email_override ?? email ?? ''}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              updateSetting({ email_override: v || null });
+                            }}
+                            placeholder="订阅邮箱，默认使用注册邮箱"
+                            className="w-full bg-background/60 border border-border rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-muted/70 focus:outline-none focus:border-primary/60"
+                          />
+                        </div>
+                        <button
+                          onClick={handleSendTestEmail}
+                          disabled={sendingTestMail}
+                          className="btn-neon btn-neon-primary text-sm whitespace-nowrap disabled:opacity-60"
+                        >
+                          {sendingTestMail ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin inline" />发送中…
+                            </>
+                          ) : (
+                            <>
+                              <Send className="w-3.5 h-3.5 mr-1.5 inline" />发一封测试邮件
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                        {pushSettings.email_verified ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-300">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            邮箱连通性：已验证（最近一封测试邮件发送成功）
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-amber-300/90">
+                            <Info className="w-3.5 h-3.5" />
+                            尚未验证邮箱连通性，建议点击"发一封测试邮件"确认能收到。
+                          </span>
+                        )}
+                        {!pushSettings.email_enabled && (
+                          <span className="text-muted">当前：邮件推送未启用</span>
+                        )}
+                      </div>
+
+                      <div className="rounded-lg bg-sky-500/5 border border-sky-400/20 px-3 py-2 text-[12px] leading-relaxed text-sky-200/90 flex items-start gap-2">
+                        <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                        <div>
+                          若测试邮件返回"未检测到 SMTP 配置"，需要在 Render 的 Environment Variables 或本地{' '}
+                          <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded">.env</code> 里配置：
+                          <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded mx-1">MAIL_SERVER</code>
+                          <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded mx-1">MAIL_PORT</code>
+                          <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded mx-1">MAIL_USERNAME</code>
+                          <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded mx-1">MAIL_PASSWORD</code>
+                          <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded mx-1">MAIL_USE_TLS</code>
+                          <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded mx-1">MAIL_FROM</code>
+                          。推荐使用 Gmail 应用密码 / 腾讯企业邮 / SendGrid / Resend。
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 微信推送 */}
+                    <div className="rounded-xl border border-border bg-surface/40 p-4 space-y-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted">
+                          <MessageCircle className="w-3.5 h-3.5" />微信推送
+                        </div>
+                        <Switch checked={pushSettings.wechat_enabled} onChange={(v) => updateSetting({ wechat_enabled: v })} />
+                      </div>
+
+                      <div className="rounded-lg bg-emerald-500/5 border border-emerald-400/20 px-3 py-2 text-[12px] leading-relaxed text-emerald-200/90 flex items-start gap-2">
+                        <ShieldAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <b>微信主动推送的硬限制（必须提前知道，否则以为"不工作"）：</b>
+                          <ul className="list-disc ml-4 mt-1 space-y-0.5">
+                            <li>个人微信：<b>官方完全不开放主动发消息的 API</b>。任何号称能给个人微信号主动推送的方案都是违反微信 ToS 的外挂，封号风险极高，本项目不集成。</li>
+                            <li>公众号：订阅号只能在用户进入会话后 48h 内被动回复；服务号需用户点击「模板消息订阅授权」后才能发送模板消息（不能 00:00 随便推）。</li>
+                            <li>
+                              ✅ <b>企业微信（合规、可 00:00 主动推）：</b>推荐路径。你需要企业微信自建应用的{' '}
+                              <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded">CorpID / CorpSecret / AgentID</code> 以及员工的{' '}
+                              <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded">userid</code>
+                              ，拿到后替换 <code className="font-mono bg-white/5 px-1.5 py-0.5 rounded">PushService._send_wechat_sync</code> 中的占位实现即可。
+                            </li>
+                          </ul>
+                          当前状态：微信推送切换为"开"后，后台推送任务会保留接收方，但发送阶段标记为 skipped（不算失败，也不扣费），并在「历史推送」详情里附上上面这条接入指引。
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 筛选器 */}
+                    <div className="rounded-xl border border-border bg-surface/40 p-4 space-y-3">
+                      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted">
+                        <Sparkles className="w-3.5 h-3.5" />个性化过滤
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="sm:w-60 text-sm text-white">只推送 AI 价值分 ≥</div>
+                        <div className="flex-1 flex items-center gap-3">
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={pushSettings.min_ai_value_score ?? 0}
+                            onChange={(e) => updateSetting({ min_ai_value_score: parseInt(e.target.value, 10) })}
+                            className="flex-1 accent-primary"
+                          />
+                          <div className="w-14 text-right font-mono text-primary text-sm">
+                            {pushSettings.min_ai_value_score ?? 0}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted">
+                        只推送指定兴趣标签（留空表示全部都推）。可先去资讯页浏览常见标签后再填。
+                      </div>
+                      <input
+                        defaultValue={(pushSettings.interest_tags_filter || []).join('，')}
+                        onBlur={(e) => {
+                          const tags = e.target.value
+                            .split(/[,，、;；\s]+/)
+                            .map((t) => t.trim())
+                            .filter(Boolean);
+                          updateSetting({ interest_tags_filter: tags });
+                        }}
+                        placeholder="例：AI治理，大模型，量子计算（用逗号或顿号分隔）"
+                        className="w-full bg-background/60 border border-border rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-muted/70 focus:outline-none focus:border-primary/60"
+                      />
+                    </div>
+                  </div>
+                )}
+              </motion.div>
 
               <div className="glass-card rounded-2xl p-6 mb-6">
                 <h3 className="text-lg font-bold text-white mb-4">成就徽章</h3>

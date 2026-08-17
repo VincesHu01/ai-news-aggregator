@@ -115,6 +115,47 @@ async def get_heatmap(
     return HeatmapResponse(dates=dates, scores=scores, counts=counts)
 
 
+@router.get("/history", response_model=NewsCardListResponse)
+async def get_reading_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取当前用户的阅读历史（按阅读时间倒序）"""
+    base_query = (
+        select(NewsCard, ReadingRecord)
+        .join(ReadingRecord, ReadingRecord.card_id == NewsCard.id)
+        .where(ReadingRecord.user_id == current_user.id)
+        .order_by(desc(ReadingRecord.created_at))
+    )
+
+    # count
+    count_query = (
+        select(func.count())
+        .select_from(ReadingRecord)
+        .where(ReadingRecord.user_id == current_user.id)
+    )
+    total = await db.scalar(count_query) or 0
+
+    paged_query = base_query.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(paged_query)
+    rows = result.all()
+
+    items = []
+    for card, record in rows:
+        card_data = NewsCardResponse.model_validate(card)
+        card_data.is_read = True
+        items.append(card_data)
+
+    return NewsCardListResponse(
+        total=total,
+        page=page,
+        page_size=page_size,
+        items=items,
+    )
+
+
 @router.get("/{card_id}", response_model=NewsCardResponse)
 async def get_card(
     card_id: str,
@@ -168,10 +209,10 @@ async def mark_as_read(
     rewards_engine = RewardsEngine()
 
     if existing:
+        # 已读过：只更新阅读时长，不再重复发放积分和经验
         existing.read_duration = max(existing.read_duration, read_data.read_duration)
-        points_earned, exp_earned = rewards_engine.calculate_reading_rewards(
-            read_data.read_duration
-        )
+        points_earned = 0
+        exp_earned = 0
     else:
         record = ReadingRecord(
             user_id=merged_user.id,
@@ -182,13 +223,11 @@ async def mark_as_read(
         points_earned, exp_earned = rewards_engine.calculate_reading_rewards(
             read_data.read_duration
         )
-
-    merged_user.points += points_earned
-    merged_user.experience += exp_earned
-
-    new_level = rewards_engine.get_level_from_experience(merged_user.experience)
-    if new_level > merged_user.level:
-        merged_user.level = new_level
+        merged_user.points += points_earned
+        merged_user.experience += exp_earned
+        new_level = rewards_engine.get_level_from_experience(merged_user.experience)
+        if new_level > merged_user.level:
+            merged_user.level = new_level
 
     await db.commit()
     await db.refresh(merged_user)
