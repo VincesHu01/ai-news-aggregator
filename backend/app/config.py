@@ -49,5 +49,13 @@ class Settings(BaseSettings):
             return json.loads(v)
         return v
 
+    @field_validator("FEISHU_WEBHOOK_URL", "PUBLIC_APP_URL", mode="before")
+    @classmethod
+    def strip_wrapping_quotes(cls, value):
+        """兼容从 dotenv 或部署控制台复制过来的带引号 URL。"""
+        if isinstance(value, str):
+            return value.strip().strip('"').strip("'")
+        return value
+
 
 settings = Settings()
