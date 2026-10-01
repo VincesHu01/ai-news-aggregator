@@ -145,11 +145,11 @@ export default function NewsPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-2xl font-bold text-white">AI 资讯</h1>
-              <p className="text-muted text-sm">阅读资讯，获取积分，收集卡牌</p>
+              <p className="text-muted text-sm">本地 Ollama 精选摘要 · 阅读资讯，获取积分，收集卡牌</p>
             </div>
             <div className="hidden sm:flex items-center gap-2 text-xs text-muted">
               <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              实时更新中
+              本地模型驱动
             </div>
           </div>
 

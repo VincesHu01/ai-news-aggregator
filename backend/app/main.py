@@ -16,7 +16,7 @@ from app.models.news import NewsCard
 from app.models.predictions import PredictionBet
 from app.models.push import PushHistory, UserPushSettings
 from app.models.user import User
-from app.routers import auth, news, rewards, predictions, shares, friends
+from app.routers import auth, news, rewards, predictions, shares, friends, ingest
 from app.utils.security import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -36,12 +36,16 @@ def get_collector() -> "DataCollector":
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    collector = get_collector()
-    await collector.start_scheduler(interval_hours=settings.COLLECTION_INTERVAL_HOURS)
-    # 启动时不重复跑：如果用户一打开就触发，lifespan 里不再跑，避免立刻两次采集。
-    logger.info(f"数据采集器调度器已启动（模式：{'00:00 cron' if settings.COLLECTION_INTERVAL_HOURS == 24 else f'interval {settings.COLLECTION_INTERVAL_HOURS}h'}）")
+    collector = None
+    if not settings.LOCAL_INGEST_ONLY:
+        collector = get_collector()
+        await collector.start_scheduler(interval_hours=settings.COLLECTION_INTERVAL_HOURS)
+        logger.info(f"数据采集器调度器已启动（模式：{'00:00 cron' if settings.COLLECTION_INTERVAL_HOURS == 24 else f'interval {settings.COLLECTION_INTERVAL_HOURS}h'}）")
+    else:
+        logger.info("本地 Ollama 导入模式已启用；云端不会调用 LLM")
     yield
-    await collector.stop_scheduler()
+    if collector:
+        await collector.stop_scheduler()
 
 
 app = FastAPI(
@@ -65,6 +69,7 @@ app.include_router(rewards.router, prefix="/api/rewards", tags=["Rewards"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["Predictions"])
 app.include_router(shares.router, prefix="/api/shares", tags=["Shares"])
 app.include_router(friends.router, prefix="/api/friends", tags=["Friends"])
+app.include_router(ingest.router, prefix="/api/internal/import", tags=["Local ingest"])
 
 
 @app.get("/api/health")
@@ -73,6 +78,8 @@ async def health_check():
         "status": "ok",
         "version": "1.0.0",
         "service": "AI News Aggregator",
+        "generation_mode": "local_ollama_import" if settings.LOCAL_INGEST_ONLY else "local_ollama_direct",
+        "external_llm_api": False,
     }
 
 
@@ -98,6 +105,11 @@ async def public_trigger_collection():
     - 20 分钟内跑过直接返回 skipped（ok=false, reason=...），不花一分钱。
     - 采集 + LLM + 推送都后台 asyncio 跑，HTTP 立刻返回状态。
     """
+    if settings.LOCAL_INGEST_ONLY:
+        return {
+            "status": "local_ingest_only",
+            "detail": "新闻由用户电脑上的 Ollama 生成后自动同步，云端不会调用外部 LLM API。",
+        }
     collector = get_collector()
 
     async def _bg():
@@ -312,6 +324,8 @@ async def send_test_email(
 # ==============================================================================
 @app.post("/api/admin/run-collection")
 async def trigger_collection_admin():
+    if settings.LOCAL_INGEST_ONLY:
+        raise HTTPException(status_code=409, detail="云端采集已关闭；请运行本机 DailyBrief 同步任务")
     collector = get_collector()
 
     async def _bg():

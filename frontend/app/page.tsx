@@ -17,21 +17,22 @@ export default function LandingPage() {
   const [stats, setStats] = useState<{ news_count: number; users_count: number; bets_count: number } | null>(null);
   const [triggerMsg, setTriggerMsg] = useState<{ type: 'ok' | 'skip' | 'err'; text: string } | null>(null);
 
-  // 每次用户打开（挂载）首页：匿名触发一次采集+推送
-  // 服务端自带 20min 最小间隔，不用担心被刷
+  // 查询资讯引擎状态；本地 Ollama 模式不会让云端执行 LLM。
   useEffect(() => {
     let cancelled = false;
     publicTriggerCollection()
       .then((r) => {
         if (cancelled) return;
-        if (r.status === 'ok') {
-          const saved = r.detail?.saved_cards ?? 0;
+        if (r.status === 'local_ingest_only') {
+          setTriggerMsg({ type: 'ok', text: typeof r.detail === 'string' ? r.detail : '本地 Ollama 情报引擎已启用。' });
+        } else if (r.status === 'ok') {
+          const saved = typeof r.detail === 'object' ? r.detail?.saved_cards ?? 0 : 0;
           setTriggerMsg({
             type: 'ok',
             text: saved > 0 ? `✓ 后台已完成一轮采集，新增 ${saved} 条资讯并尝试推送` : '✓ 后台已完成一轮采集与推送，若 20 分钟内已跑过则会跳过。',
           });
         } else {
-          setTriggerMsg({ type: 'skip', text: r.detail?.reason || '最近已执行过采集，本次跳过。' });
+          setTriggerMsg({ type: 'skip', text: typeof r.detail === 'object' ? r.detail?.reason || '最近已执行过采集，本次跳过。' : '最近已执行过采集，本次跳过。' });
         }
       })
       .catch((e) => {
@@ -123,7 +124,7 @@ export default function LandingPage() {
             transition={{ delay: 0.4 }}
             className="text-muted text-lg sm:text-xl mb-8 max-w-2xl mx-auto"
           >
-            发现人工智能的最新前沿。精选资讯、预测市场、卡牌收集，一站式体验 AI 世界。
+            由你电脑上的本地大模型生成精确摘要，再同步到云端供浏览、收藏与飞书推送。
           </motion.p>
 
           <motion.div

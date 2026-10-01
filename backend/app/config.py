@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional
+from typing import List
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 import json
@@ -22,33 +22,18 @@ class Settings(BaseSettings):
 
     COLLECTION_INTERVAL_HOURS: int = 24
 
-    # LLM 配置：支持多模型 fallback
-    # Groq 免费：https://console.groq.com
-    # Google 免费：https://aistudio.google.com
-    # OpenRouter 免费：https://openrouter.ai
-    LLM_PROVIDERS: List[Dict] = [
-        {
-            "name": "Groq",
-            "api_key": "",
-            "base_url": "https://api.groq.com/openai/v1",
-            "model": "llama-3.1-70b-versatile",
-            "priority": 1,
-        },
-        {
-            "name": "GoogleFree",
-            "api_key": "",
-            "base_url": "https://generativelanguage.googleapis.com/v1beta",
-            "model": "gemini-2.0-flash",
-            "priority": 2,
-        },
-        {
-            "name": "OpenRouter",
-            "api_key": "",
-            "base_url": "https://openrouter.ai/api/v1",
-            "model": "meta-llama/llama-3.1-70b-instruct",
-            "priority": 3,
-        },
-    ]
+    # 只连接本机 Ollama，不使用 Groq / Gemini / OpenRouter 等外部 LLM API。
+    # 云端部署设置 LOCAL_INGEST_ONLY=true，仅接收本机已经生成好的卡片。
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434/v1"
+    OLLAMA_MODEL: str = "dailybrief-qwen:8b"
+    LOCAL_INGEST_ONLY: bool = True
+
+    # 本机 DailyBrief → 云端 NEXUS 的私有导入通道。
+    NEXUS_INGEST_TOKEN: str = ""
+
+    # 飞书群自定义机器人 webhook。只保存在环境变量中，不写进代码库。
+    FEISHU_WEBHOOK_URL: str = ""
+    PUBLIC_APP_URL: str = "https://ai-news-frontend-kappa.vercel.app"
 
     # CORS：部署时设置为 ["*"] 或具体域名列表
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8080"]
@@ -56,13 +41,6 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     model_config = {"env_file": ".env", "case_sensitive": True}
-
-    @field_validator("LLM_PROVIDERS", mode="before")
-    @classmethod
-    def parse_llm_providers(cls, v):
-        if isinstance(v, str):
-            return json.loads(v)
-        return v
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

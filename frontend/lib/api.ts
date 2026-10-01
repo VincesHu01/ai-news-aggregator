@@ -407,10 +407,10 @@ export async function getPublicStats(): Promise<{ news_count: number; users_coun
   return resp as unknown as { news_count: number; users_count: number; bets_count: number };
 }
 
-// 匿名访问触发一次采集（带 20 分钟防刷）
+// 云端旧模式会触发采集；本地 Ollama 模式只返回运行状态。
 export async function publicTriggerCollection(): Promise<{
-  status: 'ok' | 'skipped';
-  detail?: {
+  status: 'ok' | 'skipped' | 'local_ingest_only';
+  detail?: string | {
     ok: boolean;
     reason: string;
     trigger: string;
@@ -421,8 +421,8 @@ export async function publicTriggerCollection(): Promise<{
 }> {
   const resp = await apiClient.post('/public/trigger-collection');
   return resp as unknown as {
-    status: 'ok' | 'skipped';
-    detail?: {
+    status: 'ok' | 'skipped' | 'local_ingest_only';
+    detail?: string | {
       ok: boolean;
       reason: string;
       trigger: string;

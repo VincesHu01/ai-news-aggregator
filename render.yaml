@@ -13,8 +13,14 @@ services:
         sync: false
       - key: SECRET_KEY
         generateValue: true
-      - key: LLM_PROVIDERS
+      - key: LOCAL_INGEST_ONLY
+        value: 'true'
+      - key: NEXUS_INGEST_TOKEN
         sync: false
+      - key: FEISHU_WEBHOOK_URL
+        sync: false
+      - key: PUBLIC_APP_URL
+        value: https://ai-news-frontend-kappa.vercel.app
       - key: CORS_ORIGINS
         value: '["*"]'
       - key: COLLECTION_INTERVAL_HOURS

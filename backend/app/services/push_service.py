@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
+import httpx
 from sqlalchemy import select
 
 from app.config import settings
@@ -25,6 +26,60 @@ class PushService:
 
     def __init__(self):
         pass
+
+    async def send_feishu_digest(
+        self,
+        cards: List[NewsCard],
+        headline: str,
+        overview: str,
+        report_date: str,
+    ) -> tuple[bool, str]:
+        """Send one digest to the Feishu group robot configured for NEXUS."""
+        webhook = settings.FEISHU_WEBHOOK_URL.strip()
+        if not webhook:
+            return False, "FEISHU_WEBHOOK_URL 未配置"
+
+        rows = []
+        for index, card in enumerate(cards[:8], 1):
+            tags = " / ".join(str(tag) for tag in (card.interest_tags or [])[:4])
+            rows.append(
+                "\n".join([
+                    f"**{index}. [{card.title}]({card.source_url})**",
+                    f"来源：{card.source} · 价值分：{round(card.ai_value_score or 0)}",
+                    f"**精确摘要：** {card.summary or '暂无摘要'}",
+                    f"标签：{tags}" if tags else "",
+                ]).strip()
+            )
+        content = "\n\n".join([
+            f"## {headline or 'NEXUS 每日知识简报'}",
+            f"**30 秒总览：** {overview}" if overview else "",
+            *rows,
+            f"[打开 NEXUS 查看完整内容]({settings.PUBLIC_APP_URL}/news)",
+            "> 摘要由本机 Ollama 生成；内容用于扩展行业认知，不构成投资建议。",
+        ]).strip()[:7800]
+        payload = {
+            "msg_type": "interactive",
+            "card": {
+                "schema": "2.0",
+                "config": {"wide_screen_mode": True},
+                "header": {
+                    "template": "blue",
+                    "title": {"tag": "plain_text", "content": f"NEXUS 每日知识简报 | {report_date}"},
+                },
+                "body": {"elements": [{"tag": "markdown", "content": content}]},
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(webhook, json=payload)
+                response.raise_for_status()
+                body = response.json()
+            if body.get("code") != 0:
+                return False, f"飞书返回错误：{body.get('msg', 'unknown')}"
+            return True, "飞书发送成功"
+        except Exception as error:
+            logger.error("飞书推送失败: %s", str(error)[:200])
+            return False, f"飞书推送失败：{str(error)[:160]}"
 
     # ------------------------------------------------------------------
     # Public API

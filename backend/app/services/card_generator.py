@@ -23,21 +23,11 @@ class CardGenerator:
     ) -> Dict:
         clean_content = sanitize_text(content)
 
-        summary = await self.llm_processor.summarize_content(
-            f"{title}\n{clean_content}"
-        )
-
-        value_score = await self.llm_processor.evaluate_value(
-            f"{title}\n{clean_content[:1000]}"
-        )
-
-        tags = await self.llm_processor.extract_tags(
-            f"{title}\n{clean_content[:1000]}"
-        )
-
-        category = await self.llm_processor.categorize_content(
-            f"{title}\n{clean_content[:1000]}"
-        )
+        analysis = await self.llm_processor.analyze_content(title, clean_content)
+        summary = analysis["summary"]
+        value_score = analysis["value_score"]
+        tags = analysis["tags"]
+        category = analysis["category"]
 
         heat_score = self._calculate_heat_score(value_score, tags, source)
 
