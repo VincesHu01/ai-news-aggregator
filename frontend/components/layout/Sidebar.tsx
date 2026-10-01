@@ -75,10 +75,16 @@ export default function Sidebar() {
           setTasks(data.tasks || []);
         }
       } catch (err: unknown) {
-        // 401 等错误不要把 tasks 清空成"暂无任务"，保留一个提示消息
         const msg = err instanceof Error ? err.message : '任务加载失败';
         setTasks([]);
-        setMessage({ type: 'error', text: msg });
+        const status = (err as { status?: number })?.status;
+        if (status === 401 || /凭证|登录|token|expired/i.test(msg)) {
+          // API 拦截器会删除过期 token；同步刷新侧栏状态，避免把后端错误文本直接暴露给普通访客。
+          setAuthed(false);
+          setMessage(null);
+        } else {
+          setMessage({ type: 'error', text: msg });
+        }
       } finally {
         if (mounted) setLoading(false);
       }
