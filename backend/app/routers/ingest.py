@@ -40,10 +40,10 @@ class DigestCard(BaseModel):
     background: str = ""
     why_it_matters: str = ""
     glossary: List[Dict[str, str]] = Field(default_factory=list)
-    analysis_sections: List[Dict[str, str]] = Field(default_factory=list)
-    timeline: List[Dict[str, str]] = Field(default_factory=list)
-    stakeholders: List[Dict[str, str]] = Field(default_factory=list)
-    visual_direction: Dict[str, str] = Field(default_factory=dict)
+    analysis_sections: List[Dict[str, Any]] = Field(default_factory=list)
+    timeline: List[Dict[str, Any]] = Field(default_factory=list)
+    stakeholders: List[Dict[str, Any]] = Field(default_factory=list)
+    visual_direction: Dict[str, Any] = Field(default_factory=dict)
     topic_tag: str = ""
     cover_image: Optional[str] = None
 
