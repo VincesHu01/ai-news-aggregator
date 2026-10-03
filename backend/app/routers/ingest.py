@@ -40,6 +40,10 @@ class DigestCard(BaseModel):
     background: str = ""
     why_it_matters: str = ""
     glossary: List[Dict[str, str]] = Field(default_factory=list)
+    analysis_sections: List[Dict[str, str]] = Field(default_factory=list)
+    timeline: List[Dict[str, str]] = Field(default_factory=list)
+    stakeholders: List[Dict[str, str]] = Field(default_factory=list)
+    visual_direction: Dict[str, str] = Field(default_factory=dict)
     topic_tag: str = ""
     cover_image: Optional[str] = None
 
@@ -199,6 +203,10 @@ async def import_digest(
                 "why_it_matters": incoming.why_it_matters,
                 "career_lens": incoming.career_lens,
                 "glossary": incoming.glossary[:3],
+                "analysis_sections": incoming.analysis_sections[:8],
+                "timeline": incoming.timeline[:8],
+                "stakeholders": incoming.stakeholders[:8],
+                "visual_direction": incoming.visual_direction,
                 "category": CATEGORY_MAP.get(incoming.category, incoming.category),
                 "source": incoming.source,
                 "source_url": incoming.source_url,

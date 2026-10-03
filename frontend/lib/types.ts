@@ -16,6 +16,17 @@ export interface NewsCard {
   why_it_matters?: string | null;
   career_lens?: string | null;
   glossary: Array<{ term: string; explanation: string }>;
+  analysis_sections: Array<{ title: string; thesis?: string; explanation: string; evidence?: string; implication?: string }>;
+  timeline: Array<{ label: string; title: string; description?: string }>;
+  stakeholders: Array<{ name: string; role?: string; impact?: string }>;
+  visual_direction: {
+    world?: 'orbital' | 'cinematic' | 'pastoral' | 'castle' | 'noir' | 'laboratory' | 'oceanic';
+    mood?: string;
+    motif?: string;
+    accent?: string;
+    secondary?: string;
+    scene_prompt?: string;
+  };
   category?: string | null;
   source: string;
   source_url: string;

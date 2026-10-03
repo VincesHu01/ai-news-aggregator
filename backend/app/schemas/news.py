@@ -12,6 +12,10 @@ class NewsCardResponse(BaseModel):
     why_it_matters: Optional[str] = None
     career_lens: Optional[str] = None
     glossary: List[dict] = Field(default_factory=list)
+    analysis_sections: List[dict] = Field(default_factory=list)
+    timeline: List[dict] = Field(default_factory=list)
+    stakeholders: List[dict] = Field(default_factory=list)
+    visual_direction: dict = Field(default_factory=dict)
     category: Optional[str] = None
     source: str
     source_url: str
