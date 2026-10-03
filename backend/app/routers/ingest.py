@@ -74,11 +74,11 @@ GENERIC_TAGS = {"ai", "人工智能", "科技", "新闻", "金融", "商业", "�
 
 
 def _single_topic_tag(incoming: DigestCard) -> str:
-    choices = [incoming.topic_tag, *incoming.interest_tags, *incoming.selection_reasons]
-    for raw in choices:
-        tag = str(raw or "").strip().lstrip("#")
-        if tag and tag.lower() not in GENERIC_TAGS and "源覆盖" not in tag and "待验证" not in tag:
-            return tag[:24]
+    tag = str(incoming.topic_tag or "").strip().lstrip("#")
+    if tag and tag.lower() not in GENERIC_TAGS:
+        return tag[:24]
+    # Older exports attached the report-wide keyword list to every card. Do
+    # not recycle those broad/repeated tags; use one honest category label.
     return {
         "tech": "模型与产品",
         "finance": "公司与市场",
