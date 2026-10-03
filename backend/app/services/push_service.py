@@ -11,6 +11,7 @@ from app.database import async_session
 from app.models.news import NewsCard
 from app.models.push import PushHistory, UserPushSettings
 from app.models.user import User
+from app.services.control_service import make_control_url
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,47 @@ class PushService:
     def __init__(self):
         pass
 
+    async def send_feishu_control_card(self, enabled: bool) -> tuple[bool, str]:
+        """Publish a durable Feishu control card with both pause and resume buttons."""
+        webhook = settings.FEISHU_WEBHOOK_URL.strip()
+        if not webhook:
+            return False, "FEISHU_WEBHOOK_URL 未配置"
+        state = "运行中" if enabled else "已暂停"
+        detail = (
+            "定时任务会先检查此开关，再决定是否启动本地 Ollama。"
+            if enabled else
+            "不会生成新简报、写入 NEXUS 或发送飞书；过往记录全部保留。"
+        )
+        payload = {
+            "msg_type": "interactive",
+            "card": {
+                "schema": "2.0",
+                "config": {"wide_screen_mode": True},
+                "header": {
+                    "template": "green" if enabled else "grey",
+                    "title": {"tag": "plain_text", "content": f"NEXUS 推送控制 · {state}"},
+                },
+                "body": {"elements": [
+                    {"tag": "markdown", "content": f"**当前状态：{state}**\n\n{detail}\n\n可随时用下面的按钮更改；历史新闻不会被删除。"},
+                    {"tag": "action", "actions": [
+                        {"tag": "button", "text": {"tag": "plain_text", "content": "暂停全部推送"}, "type": "danger", "url": make_control_url("pause")},
+                        {"tag": "button", "text": {"tag": "plain_text", "content": "恢复推送"}, "type": "primary", "url": make_control_url("resume")},
+                    ]},
+                ]},
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(webhook, json=payload)
+                response.raise_for_status()
+                body = response.json()
+            if body.get("code") != 0:
+                return False, f"飞书返回错误：{body.get('msg', 'unknown')}"
+            return True, "飞书控制卡片发送成功"
+        except Exception as error:
+            logger.error("飞书控制卡片发送失败: %s", str(error)[:200])
+            return False, f"飞书控制卡片发送失败：{str(error)[:160]}"
+
     async def send_feishu_digest(
         self,
         cards: List[NewsCard],
@@ -41,22 +83,37 @@ class PushService:
 
         rows = []
         for index, card in enumerate(cards[:8], 1):
-            tags = " / ".join(str(tag) for tag in (card.interest_tags or [])[:4])
+            tag = str((card.interest_tags or ["行业动态"])[0])
+            facts = [str(fact).strip() for fact in (card.key_facts or []) if str(fact).strip()]
+            glossary = [item for item in (card.glossary or []) if isinstance(item, dict)]
+            fact_block = "\n".join(f"- {fact}" for fact in facts[:3])
+            glossary_block = "\n".join(
+                f"- **{item.get('term', '术语')}**：{item.get('explanation', '')}"
+                for item in glossary[:2]
+                if item.get("explanation")
+            )
             rows.append(
                 "\n".join([
                     f"**{index}. [{card.title}]({card.source_url})**",
-                    f"来源：{card.source} · 价值分：{round(card.ai_value_score or 0)}",
-                    f"**精确摘要：** {card.summary or '暂无摘要'}",
-                    f"标签：{tags}" if tags else "",
+                    f"来源：{card.source}　｜　#{tag}",
+                    f"**发生了什么：** {card.summary or '暂无摘要'}",
+                    f"**关键事实：**\n{fact_block}" if fact_block else "",
+                    f"**背景补充：** {card.background}" if card.background else "",
+                    f"**术语小词典：**\n{glossary_block}" if glossary_block else "",
+                    f"**为什么值得关注：** {card.why_it_matters}" if card.why_it_matters else "",
+                    f"**求职启示：** {card.career_lens}" if card.career_lens else "",
+                    f"[阅读原文]({card.source_url})",
                 ]).strip()
             )
-        content = "\n\n".join([
+        content = "\n\n---\n\n".join([
             f"## {headline or 'NEXUS 每日知识简报'}",
-            f"**30 秒总览：** {overview}" if overview else "",
+            f"**今日导读：** {overview}" if overview else "",
             *rows,
             f"[打开 NEXUS 查看完整内容]({settings.PUBLIC_APP_URL}/news)",
             "> 摘要由本机 Ollama 生成；内容用于扩展行业认知，不构成投资建议。",
-        ]).strip()[:7800]
+        ]).strip()[:26000]
+        pause_url = make_control_url("pause")
+        resume_url = make_control_url("resume")
         payload = {
             "msg_type": "interactive",
             "card": {
@@ -66,7 +123,26 @@ class PushService:
                     "template": "blue",
                     "title": {"tag": "plain_text", "content": f"NEXUS 每日知识简报 | {report_date}"},
                 },
-                "body": {"elements": [{"tag": "markdown", "content": content}]},
+                "body": {"elements": [
+                    {"tag": "markdown", "content": content},
+                    {
+                        "tag": "action",
+                        "actions": [
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "暂停全部推送"},
+                                "type": "danger",
+                                "url": pause_url,
+                            },
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "恢复推送"},
+                                "type": "primary",
+                                "url": resume_url,
+                            },
+                        ],
+                    },
+                ]},
             },
         }
         try:

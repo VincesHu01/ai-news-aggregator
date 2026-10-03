@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -5,12 +6,15 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+import httpx
+from bs4 import BeautifulSoup
 
 from app.config import settings
 from app.database import async_session
 from app.models.news import NewsCard
 from app.models.push import PushHistory
 from app.services.push_service import PushService
+from app.services.control_service import get_delivery_control, set_delivery_enabled
 
 router = APIRouter()
 
@@ -32,6 +36,12 @@ class DigestCard(BaseModel):
     score_breakdown: Optional[Dict[str, Any]] = None
     selection_reasons: List[str] = Field(default_factory=list)
     career_lens: str = ""
+    key_facts: List[str] = Field(default_factory=list)
+    background: str = ""
+    why_it_matters: str = ""
+    glossary: List[Dict[str, str]] = Field(default_factory=list)
+    topic_tag: str = ""
+    cover_image: Optional[str] = None
 
 
 class DigestReport(BaseModel):
@@ -50,11 +60,56 @@ class DigestImport(BaseModel):
     push_to_feishu: bool = True
 
 
+class InternalControlUpdate(BaseModel):
+    enabled: bool
+
+
 CATEGORY_MAP = {
     "tech": "AI产业",
     "finance": "金融商业",
     "politics": "宏观国际",
 }
+
+GENERIC_TAGS = {"ai", "人工智能", "科技", "新闻", "金融", "商业", "宏观", "国际", "new", "developing"}
+
+
+def _single_topic_tag(incoming: DigestCard) -> str:
+    choices = [incoming.topic_tag, *incoming.interest_tags, *incoming.selection_reasons]
+    for raw in choices:
+        tag = str(raw or "").strip().lstrip("#")
+        if tag and tag.lower() not in GENERIC_TAGS and "源覆盖" not in tag and "待验证" not in tag:
+            return tag[:24]
+    return {
+        "tech": "模型与产品",
+        "finance": "公司与市场",
+        "politics": "政策与国际",
+    }.get(incoming.category, "行业动态")
+
+
+async def _discover_cover_image(url: str) -> Optional[str]:
+    try:
+        async with httpx.AsyncClient(
+            timeout=7.0,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 NEXUS knowledge reader"},
+        ) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+        if "html" not in response.headers.get("content-type", "").lower():
+            return None
+        soup = BeautifulSoup(response.text[:750_000], "html.parser")
+        for attrs in (
+            {"property": "og:image"},
+            {"name": "twitter:image"},
+            {"property": "twitter:image"},
+        ):
+            node = soup.find("meta", attrs=attrs)
+            value = node.get("content") if node else None
+            if isinstance(value, str) and value.startswith("https://"):
+                return value[:1000]
+    except Exception:
+        return None
+    return None
 
 
 def _verify_token(value: str) -> None:
@@ -65,6 +120,23 @@ def _verify_token(value: str) -> None:
         raise HTTPException(status_code=401, detail="导入令牌无效")
 
 
+@router.put("/control")
+async def internal_update_control(
+    payload: InternalControlUpdate,
+    x_nexus_ingest_token: str = Header(default=""),
+):
+    _verify_token(x_nexus_ingest_token)
+    row = await set_delivery_enabled(payload.enabled, "local-cli")
+    feishu_ok, feishu_message = await PushService().send_feishu_control_card(payload.enabled)
+    return {
+        "enabled": bool(row.enabled),
+        "status": "running" if row.enabled else "paused",
+        "message": "自动生成与推送已开启" if row.enabled else "自动生成、NEXUS 导入与飞书推送均已暂停",
+        "feishu": "success" if feishu_ok else "failed",
+        "feishu_message": feishu_message,
+    }
+
+
 @router.post("/digest")
 async def import_digest(
     payload: DigestImport,
@@ -72,10 +144,27 @@ async def import_digest(
 ):
     """Idempotently import locally generated cards, then push the new batch to Feishu."""
     _verify_token(x_nexus_ingest_token)
+    control = await get_delivery_control()
+    if not control.enabled:
+        return {
+            "status": "paused",
+            "created": 0,
+            "updated": 0,
+            "feishu": "skipped",
+            "message": "全局截停开关已关闭；历史记录保留，本次没有写入或推送。",
+        }
     try:
         published_at = datetime.fromisoformat(payload.date)
     except ValueError as error:
         raise HTTPException(status_code=422, detail="date 必须是 YYYY-MM-DD") from error
+
+    discovered_images = await asyncio.gather(*[
+        _discover_cover_image(item.source_url) if not item.cover_image else asyncio.sleep(0, result=item.cover_image)
+        for item in payload.cards
+    ])
+    image_by_story = {
+        item.story_id: image for item, image in zip(payload.cards, discovered_images) if image
+    }
 
     created: List[NewsCard] = []
     updated = 0
@@ -84,15 +173,15 @@ async def import_digest(
             existing = (
                 await db.execute(select(NewsCard).where(NewsCard.source_id == incoming.story_id))
             ).scalars().first()
-            tags = list(dict.fromkeys([
-                *incoming.interest_tags,
-                incoming.continuity or "",
-                f"{incoming.source_count}源覆盖" if incoming.source_count > 1 else "单源待验证",
-            ]))
-            tags = [tag for tag in tags if tag][:8]
+            tags = [_single_topic_tag(incoming)]
             values = {
                 "title": incoming.title,
                 "summary": incoming.summary,
+                "key_facts": incoming.key_facts[:4],
+                "background": incoming.background,
+                "why_it_matters": incoming.why_it_matters,
+                "career_lens": incoming.career_lens,
+                "glossary": incoming.glossary[:3],
                 "category": CATEGORY_MAP.get(incoming.category, incoming.category),
                 "source": incoming.source,
                 "source_url": incoming.source_url,
@@ -102,6 +191,9 @@ async def import_digest(
                 "interest_tags": tags,
                 "published_at": published_at,
             }
+            discovered_image = incoming.cover_image or image_by_story.get(incoming.story_id)
+            if discovered_image:
+                values["cover_image"] = discovered_image
             if existing:
                 for key, value in values.items():
                     setattr(existing, key, value)

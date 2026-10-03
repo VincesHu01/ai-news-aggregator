@@ -11,6 +11,11 @@ export interface NewsCard {
   id: string;
   title: string;
   summary?: string | null;
+  key_facts: string[];
+  background?: string | null;
+  why_it_matters?: string | null;
+  career_lens?: string | null;
+  glossary: Array<{ term: string; explanation: string }>;
   category?: string | null;
   source: string;
   source_url: string;
@@ -21,6 +26,14 @@ export interface NewsCard {
   published_at?: string | null;
   created_at: string;
   is_read: boolean;
+}
+
+export interface DeliveryControl {
+  enabled: boolean;
+  status: 'running' | 'paused';
+  updated_at?: string | null;
+  updated_by?: string | null;
+  message: string;
 }
 
 export interface NewsCardListResponse {

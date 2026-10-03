@@ -21,6 +21,8 @@ services:
         sync: false
       - key: PUBLIC_APP_URL
         value: https://ai-news-frontend-kappa.vercel.app
+      - key: PUBLIC_API_URL
+        value: https://ai-news-db-egqx.onrender.com
       - key: CORS_ORIGINS
         value: '["*"]'
       - key: COLLECTION_INTERVAL_HOURS

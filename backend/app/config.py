@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # 飞书群自定义机器人 webhook。只保存在环境变量中，不写进代码库。
     FEISHU_WEBHOOK_URL: str = ""
     PUBLIC_APP_URL: str = "https://ai-news-frontend-kappa.vercel.app"
+    PUBLIC_API_URL: str = "https://ai-news-db-egqx.onrender.com"
 
     # CORS：部署时设置为 ["*"] 或具体域名列表
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8080"]
@@ -49,7 +50,7 @@ class Settings(BaseSettings):
             return json.loads(v)
         return v
 
-    @field_validator("FEISHU_WEBHOOK_URL", "PUBLIC_APP_URL", mode="before")
+    @field_validator("FEISHU_WEBHOOK_URL", "PUBLIC_APP_URL", "PUBLIC_API_URL", mode="before")
     @classmethod
     def strip_wrapping_quotes(cls, value):
         """兼容从 dotenv 或部署控制台复制过来的带引号 URL。"""

@@ -78,6 +78,19 @@ def _upgrade_existing_schema(connection: Any) -> None:
     if "source_id" not in columns:
         connection.execute(text("ALTER TABLE news_cards ADD COLUMN source_id VARCHAR(200)"))
 
+    additions = {
+        "key_facts": "JSON",
+        "background": "TEXT",
+        "why_it_matters": "TEXT",
+        "career_lens": "TEXT",
+        "glossary": "JSON",
+    }
+    for name, sql_type in additions.items():
+        if name not in columns:
+            connection.execute(text(f"ALTER TABLE news_cards ADD COLUMN {name} {sql_type}"))
+    connection.execute(text("UPDATE news_cards SET key_facts = '[]' WHERE key_facts IS NULL"))
+    connection.execute(text("UPDATE news_cards SET glossary = '[]' WHERE glossary IS NULL"))
+
     indexes = {index["name"] for index in inspect(connection).get_indexes("news_cards")}
     if "ix_news_cards_source_id" not in indexes:
         connection.execute(text(

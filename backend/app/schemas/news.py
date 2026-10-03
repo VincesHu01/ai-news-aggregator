@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 
@@ -7,12 +7,17 @@ class NewsCardResponse(BaseModel):
     id: str
     title: str
     summary: Optional[str] = None
+    key_facts: List[str] = Field(default_factory=list)
+    background: Optional[str] = None
+    why_it_matters: Optional[str] = None
+    career_lens: Optional[str] = None
+    glossary: List[dict] = Field(default_factory=list)
     category: Optional[str] = None
     source: str
     source_url: str
     heat_score: float
     ai_value_score: float
-    interest_tags: List[str] = []
+    interest_tags: List[str] = Field(default_factory=list)
     cover_image: Optional[str] = None
     published_at: Optional[datetime] = None
     created_at: datetime

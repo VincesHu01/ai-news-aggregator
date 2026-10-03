@@ -1,431 +1,57 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  ExternalLink,
-  Flame,
-  Sparkles,
-  Clock,
-  Tag,
-  AlertCircle,
-  Loader2,
-  Heart,
-  Bookmark,
-  Share2,
-  Gift,
-  Trophy,
-  CheckCircle2,
-  X
-} from 'lucide-react';
-import type { NewsCard as NewsCardType } from '@/lib/types';
-import { getNewsCard, isAuthenticated, markAsRead, isBookmarked, toggleBookmark } from '@/lib/api';
-import ShareDialog from '@/components/ShareDialog';
+import { useParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, ArrowUpRight, BookOpen, BriefcaseBusiness, CheckCircle2, Loader2 } from 'lucide-react';
 
-const categoryColors: Record<string, string> = {
-  hot: '#FF006E',
-  tech: '#00FFD1',
-  business: '#BF00FF',
-  finance: '#FFD93D',
-  academic: '#6BCB77',
-};
-
-const categoryLabels: Record<string, string> = {
-  hot: '🔥 热门',
-  tech: '⚡ 技术',
-  business: '💼 商业',
-  finance: '📈 财经',
-  academic: '🎓 学术',
-};
+import type { NewsCard } from '@/lib/types';
+import { getNewsCard } from '@/lib/api';
 
 export default function NewsDetailPage() {
-  const params = useParams();
-  const router = useRouter();
-  const cardId = params.cardId as string;
-
-  const [card, setCard] = useState<NewsCardType | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [liked, setLiked] = useState(false);
-  const [bookmarked, setBookmarked] = useState(false);
-  const [readingReported, setReadingReported] = useState(false);
-  const [rewardToast, setRewardToast] = useState<{
-    visible: boolean;
-    points: number;
-    experience: number;
-    new_balance?: number;
-    alreadyRead?: boolean;
-  } | null>(null);
-  const readingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const readingSecRef = useRef(0); // ref 保存秒数，不触发每 1 秒重渲染
-  const [shareOpen, setShareOpen] = useState(false);
-
-  // 读取时长进度条 UI 用，降低刷新频率：每 5 秒 setState 一次（不是每 1 秒）
-  const [readingSecDisplay, setReadingSecDisplay] = useState(0);
+  const { cardId } = useParams<{ cardId: string }>();
+  const [card, setCard] = useState<NewsCard | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchCard = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await getNewsCard(cardId);
-        setCard(data);
-        setBookmarked(isBookmarked(cardId));
-      } catch (e: any) {
-        const msg = e?.response?.data?.detail || e?.message || '加载失败';
-        setError(msg);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCard();
+    getNewsCard(cardId).then(setCard).catch((err) => setError(err?.message || '加载失败'));
   }, [cardId]);
 
-  // 阅读计时器：满 5 秒即上报（给足奖励）。>30s 继续计时但不再上报。
-  // 为避免闪动，不使用每 1 秒 setState 触发整页重渲染，改用 ref + 每 5 秒同步一次显示。
-  useEffect(() => {
-    if (!card || card.is_read || readingReported) return;
+  if (error) return <main className="min-h-screen bg-[#f7f5ef] p-8 text-center text-red-700">{error}<div className="mt-5"><Link href="/news" className="underline">返回资讯</Link></div></main>;
+  if (!card) return <main className="flex min-h-screen items-center justify-center bg-[#f7f5ef]"><Loader2 className="h-8 w-8 animate-spin text-[#285b40]" /></main>;
 
-    readingSecRef.current = 0;
-    setReadingSecDisplay(0);
-
-    readingTimerRef.current = setInterval(() => {
-      readingSecRef.current += 1;
-      const cur = readingSecRef.current;
-
-      if (cur % 5 === 0) {
-        setReadingSecDisplay(cur);
-      }
-
-      // 上报阈值：满 5 秒
-      if (!readingReported && cur >= 5 && isAuthenticated()) {
-        markAsRead(card.id, cur)
-          .then((resp) => {
-            const pt = resp?.points_earned ?? 0;
-            const ex = resp?.experience_earned ?? 0;
-            const already = pt === 0 && ex === 0;
-            setRewardToast({
-              visible: true,
-              points: pt,
-              experience: ex,
-              new_balance: resp?.new_balance,
-              alreadyRead: already,
-            });
-            setTimeout(() => {
-              setRewardToast((t) => (t ? { ...t, visible: false } : null));
-              setTimeout(() => setRewardToast(null), 500);
-            }, 2800);
-            setReadingReported(true);
-            setCard((prev) => (prev ? { ...prev, is_read: true } : prev));
-          })
-          .catch((e) => {
-            console.error('Failed to mark as read:', e);
-          });
-      }
-    }, 1000);
-
-    return () => {
-      if (readingTimerRef.current) {
-        clearInterval(readingTimerRef.current);
-        readingTimerRef.current = null;
-      }
-    };
-  }, [card, readingReported, cardId]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-10 h-10 text-primary animate-spin" />
-          <p className="text-muted text-sm">加载中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !card) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <div className="max-w-md w-full text-center glass-card rounded-2xl p-8">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center">
-            <AlertCircle className="w-8 h-8 text-accent" />
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">
-            {error?.includes('404') || error?.includes('不存在') ? 'This page could not be found.' : '加载失败'}
-          </h2>
-          <p className="text-muted text-sm mb-6">{error || '请求的资讯不存在或已被删除'}</p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button
-              onClick={() => router.back()}
-              className="px-5 py-2.5 rounded-xl bg-surface border border-border text-white hover:bg-surface/80 transition-colors flex items-center justify-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" /> 返回
-            </button>
-            <Link
-              href="/news"
-              className="px-5 py-2.5 rounded-xl bg-primary text-background font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-            >
-              浏览资讯列表
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const categoryColor = (card.category && categoryColors[card.category]) || '#00FFD1';
-  const categoryLabel = (card.category && categoryLabels[card.category]) || '📰 资讯';
-
+  const tag = card.interest_tags?.[0] || card.category || '行业动态';
   return (
-    <main className="min-h-screen bg-background">
-      {/* Top Bar */}
-      <div className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <button
-            onClick={() => router.back()}
-            className="flex items-center gap-2 text-muted hover:text-white transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span className="text-sm">返回</span>
-          </button>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setLiked(!liked)}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-                liked ? 'bg-accent/20 text-accent' : 'bg-surface text-muted hover:text-white'
-              }`}
-            >
-              <Heart className={`w-4 h-4 ${liked ? 'fill-current' : ''}`} />
-            </button>
-            <button
-              onClick={() => setBookmarked(toggleBookmark(card.id))}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-                bookmarked ? 'bg-primary/20 text-primary' : 'bg-surface text-muted hover:text-white'
-              }`}
-            >
-              <Bookmark className={`w-4 h-4 ${bookmarked ? 'fill-current' : ''}`} />
-            </button>
-            <button
-              onClick={() => setShareOpen(true)}
-              className="w-9 h-9 rounded-full bg-surface text-muted hover:text-white flex items-center justify-center transition-colors"
-            >
-              <Share2 className="w-4 h-4" />
-            </button>
-          </div>
+    <main className="min-h-screen bg-[#f7f5ef] pb-20 text-[#17241d]">
+      <header className="sticky top-0 z-20 border-b border-[#dedacf] bg-[#f7f5ef]/95 backdrop-blur"><div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4"><Link href="/news" className="flex items-center gap-2 text-sm font-semibold text-[#526158]"><ArrowLeft className="h-4 w-4" />返回简报</Link><a href={card.source_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 rounded-full bg-[#285b40] px-4 py-2 text-sm font-semibold text-white">阅读原文<ArrowUpRight className="h-4 w-4" /></a></div></header>
+
+      <article className="mx-auto max-w-4xl px-4 py-10 sm:px-8">
+        <div className="mb-6 flex flex-wrap items-center gap-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#6d7d72]"><span className="rounded-full bg-[#dfeadf] px-3 py-1 text-[#285b40]">{tag}</span><span>{card.source}</span><span>{card.published_at ? new Date(card.published_at).toLocaleDateString('zh-CN') : ''}</span></div>
+        <h1 className="font-serif text-4xl font-semibold leading-tight sm:text-5xl">{card.title}</h1>
+        <p className="mt-6 text-lg leading-9 text-[#526158]">{card.summary}</p>
+
+        <div className="relative my-10 aspect-[16/8] overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#e9e2d2,#c9d9ce)]">
+          {card.cover_image ? <Image src={card.cover_image} alt="" fill priority sizes="(max-width: 896px) 100vw, 896px" className="object-cover" /> : <div className="flex h-full items-end p-8 font-serif text-4xl text-[#285b40]/70">NEXUS / {tag}</div>}
         </div>
-      </div>
 
-      {/* Article Body */}
-      <article className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          {/* Category Tag */}
-          <div className="mb-4 flex items-center gap-3">
-            <span
-              className="px-3 py-1 rounded-lg text-xs font-medium inline-flex items-center gap-1.5"
-              style={{ backgroundColor: `${categoryColor}20`, color: categoryColor, border: `1px solid ${categoryColor}40` }}
-            >
-              {categoryLabel}
-            </span>
-            {card.is_read && (
-              <span className="px-3 py-1 rounded-lg text-xs bg-primary/10 text-primary border border-primary/30">
-                ✓ 已阅读
-              </span>
-            )}
-          </div>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Section icon={<CheckCircle2 />} title="关键事实">
+            {card.key_facts?.length ? <ul className="space-y-3">{card.key_facts.map((fact) => <li key={fact}>• {fact}</li>)}</ul> : <p>原始材料暂未提供更多可核实细节。</p>}
+          </Section>
+          <Section icon={<BookOpen />} title="背景与来龙去脉"><p>{card.background || '这条资讯暂时没有额外背景说明，可通过原文继续查证。'}</p></Section>
+          <Section icon={<BookOpen />} title="术语小词典">
+            {card.glossary?.length ? <dl className="space-y-4">{card.glossary.map((item) => <div key={item.term}><dt className="font-bold text-[#294a38]">{item.term}</dt><dd className="mt-1">{item.explanation}</dd></div>)}</dl> : <p>本条资讯没有必须额外解释的专业术语。</p>}
+          </Section>
+          <Section icon={<BriefcaseBusiness />} title="为什么重要 / 求职视角"><p>{card.why_it_matters || '关注它对行业结构和岗位需求的后续影响。'}</p>{card.career_lens && <p className="mt-4 border-t border-stone-200 pt-4"><strong>求职启示：</strong>{card.career_lens}</p>}</Section>
+        </div>
 
-          {/* Title */}
-          <h1 className="text-2xl sm:text-3xl font-bold text-white leading-tight mb-4">
-            {card.title}
-          </h1>
-
-          {/* Meta Bar */}
-          <div className="flex flex-wrap items-center gap-4 text-sm text-muted mb-6 pb-6 border-b border-border">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-surface border border-border flex items-center justify-center">
-                <ExternalLink className="w-3.5 h-3.5 text-muted" />
-              </div>
-              <span className="font-medium text-white">{card.source}</span>
-            </div>
-            {card.published_at && (
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-4 h-4" />
-                <span>{new Date(card.published_at).toLocaleDateString('zh-CN')}</span>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <Flame className="w-4 h-4 text-orange-400" />
-              <span>热度 {card.heat_score.toFixed(0)}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4" style={{ color: '#00FFD1' }} />
-              <span>AI价值 {card.ai_value_score.toFixed(0)}</span>
-            </div>
-          </div>
-
-          {/* Cover Image */}
-          {card.cover_image && (
-            <div className="mb-6 rounded-2xl overflow-hidden border border-border aspect-video bg-surface">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={card.cover_image}
-                alt={card.title}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            </div>
-          )}
-
-          {/* Summary / Content */}
-          <div className="prose prose-invert max-w-none">
-            <div className="p-5 rounded-2xl bg-surface/50 border border-border mb-6">
-              <div className="flex items-center gap-2 text-primary text-sm font-medium mb-3">
-                <Sparkles className="w-4 h-4" />
-                <span>AI 生成摘要</span>
-              </div>
-              <p className="text-white/90 leading-relaxed whitespace-pre-wrap">
-                {card.summary || '暂无摘要内容'}
-              </p>
-            </div>
-          </div>
-
-          {/* Tags */}
-          {card.interest_tags && card.interest_tags.length > 0 && (
-            <div className="mb-8">
-              <div className="flex items-center gap-2 text-muted text-sm mb-3">
-                <Tag className="w-4 h-4" />
-                <span>兴趣标签</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {card.interest_tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-3 py-1.5 rounded-xl text-sm bg-surface text-muted border border-border hover:text-white hover:border-primary/40 transition-colors"
-                  >
-                    #{tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Reading progress + Reward indicator（不闪动） */}
-          {!card.is_read ? (
-            <div className="mt-6 rounded-2xl border border-border bg-surface/40 p-4">
-              <div className="flex items-center justify-between text-xs text-muted mb-2">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>阅读奖励：满 5 秒 +5 积分 / +3 经验（阅读更久最高 3 倍）</span>
-                </div>
-                <span className="text-primary font-medium">
-                  {readingReported ? '奖励已发放' : `已阅读 ${readingSecDisplay} 秒`}
-                </span>
-              </div>
-              <div className="h-1.5 bg-black/30 rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{ background: 'linear-gradient(90deg, #00FFD1, #BF00FF)' }}
-                  initial={{ width: 0 }}
-                  animate={{ width: readingReported ? '100%' : `${Math.min(100, (readingSecDisplay / 5) * 100)}%` }}
-                  transition={{ duration: 0.5 }}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/10 p-4 flex items-center gap-3">
-              <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0" />
-              <div className="text-sm text-white/90">
-                你已经完整阅读过这篇资讯的奖励（积分+经验仅限首次阅读一次性发放）。
-              </div>
-            </div>
-          )}
-
-          {/* Read Original CTA */}
-          {card.source_url && (
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 border border-primary/20">
-              <p className="text-muted text-sm mb-3">查看完整原文请访问来源网站：</p>
-              <a
-                href={card.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-background font-medium hover:opacity-90 transition-opacity"
-              >
-                <ExternalLink className="w-4 h-4" />
-                阅读原文
-              </a>
-            </div>
-          )}
-        </motion.div>
+        <div className="mt-10 rounded-2xl border border-[#ccd8cf] bg-[#eaf1eb] p-6"><h2 className="font-serif text-2xl font-semibold">回到第一手信息</h2><p className="mt-2 text-sm leading-7 text-[#526158]">摘要帮助你建立框架，但重要判断仍应回到原始公告、研究论文或报道。NEXUS 不用价值分替你下结论。</p><a href={card.source_url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-2 font-bold text-[#285b40]">打开 {card.source} 原文<ArrowUpRight className="h-4 w-4" /></a></div>
       </article>
-
-      {/* 阅读奖励 Toast（只弹一次） */}
-      <AnimatePresence>
-        {rewardToast && rewardToast.visible && (
-          <motion.div
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            transition={{ duration: 0.35, type: 'spring' }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] w-[90%] max-w-sm"
-          >
-            <div className="glass-card rounded-2xl border border-primary/40 p-4 shadow-[0_0_30px_rgba(0,255,209,0.15)]">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
-                    {rewardToast.alreadyRead ? <CheckCircle2 className="w-5 h-5 text-white" /> : <Trophy className="w-5 h-5 text-white" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    {rewardToast.alreadyRead ? (
-                      <>
-                        <div className="text-sm font-bold text-white mb-1">你已经领取过这篇资讯的奖励啦</div>
-                        <div className="text-xs text-muted">每篇资讯只发一次，快去发现新资讯吧～</div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="text-sm font-bold text-white mb-1">阅读奖励已到账 🎉</div>
-                        <div className="flex flex-wrap gap-3 text-xs">
-                          <span className="flex items-center gap-1 text-primary font-medium">
-                            <Gift className="w-3.5 h-3.5" /> +{rewardToast.points} 积分
-                          </span>
-                          <span className="flex items-center gap-1 text-secondary font-medium">
-                            <Sparkles className="w-3.5 h-3.5" /> +{rewardToast.experience} 经验
-                          </span>
-                          {typeof rewardToast.new_balance === 'number' && (
-                            <span className="text-muted">当前积分余额 {rewardToast.new_balance}</span>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setRewardToast(null)}
-                  className="w-7 h-7 rounded-lg hover:bg-surface flex items-center justify-center text-muted hover:text-white flex-shrink-0"
-                  aria-label="关闭"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <ShareDialog
-        isOpen={shareOpen}
-        onClose={() => setShareOpen(false)}
-        targetType="news"
-        targetId={card.id}
-        title={card.title}
-      />
     </main>
   );
+}
+
+function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return <section className="rounded-2xl border border-stone-200 bg-white p-6 text-[15px] leading-7 text-[#526158]"><div className="mb-4 flex items-center gap-2 font-serif text-xl font-semibold text-[#263a30]"><span className="[&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-[#49745b]">{icon}</span>{title}</div>{children}</section>;
 }

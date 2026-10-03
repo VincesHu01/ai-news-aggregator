@@ -16,7 +16,7 @@ from app.models.news import NewsCard
 from app.models.predictions import PredictionBet
 from app.models.push import PushHistory, UserPushSettings
 from app.models.user import User
-from app.routers import auth, news, rewards, predictions, shares, friends, ingest
+from app.routers import auth, news, rewards, predictions, shares, friends, ingest, control
 from app.utils.security import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ app.include_router(predictions.router, prefix="/api/predictions", tags=["Predict
 app.include_router(shares.router, prefix="/api/shares", tags=["Shares"])
 app.include_router(friends.router, prefix="/api/friends", tags=["Friends"])
 app.include_router(ingest.router, prefix="/api/internal/import", tags=["Local ingest"])
+app.include_router(control.router, prefix="/api/control", tags=["Delivery control"])
 
 
 @app.get("/api/health")

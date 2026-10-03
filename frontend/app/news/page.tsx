@@ -1,288 +1,112 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
-import { ChevronUp, ChevronDown } from 'lucide-react';
-import Header from '@/components/layout/Header';
-import BottomNav from '@/components/layout/BottomNav';
-import Sidebar from '@/components/layout/Sidebar';
-import NewsCard from '@/components/card/NewsCard';
-import type { NewsCard as NewsCardType, ReadingResponse } from '@/lib/types';
-import { getNews, isAuthenticated } from '@/lib/api';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Loader2, PauseCircle, PlayCircle, Search, ShieldCheck } from 'lucide-react';
 
-const categories = ['all', 'hot', 'tech', 'business', 'finance', 'academic'];
-const categoryLabels: Record<string, string> = {
-  all: '全部',
-  hot: '🔥 热门',
-  tech: '⚡ 技术',
-  business: '💼 商业',
-  finance: '📈 财经',
-  academic: '🎓 学术',
-};
+import Header from '@/components/layout/Header';
+import Sidebar from '@/components/layout/Sidebar';
+import BottomNav from '@/components/layout/BottomNav';
+import NewsCard from '@/components/card/NewsCard';
+import type { DeliveryControl, NewsCard as NewsCardType } from '@/lib/types';
+import { getDeliveryControl, getNews, isAuthenticated, setDeliveryControl } from '@/lib/api';
+
+const categories = ['全部', 'AI产业', '金融商业', '宏观国际'];
 
 export default function NewsPage() {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<string>('all');
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [newsList, setNewsList] = useState<NewsCardType[]>([]);
+  const router = useRouter();
+  const [news, setNews] = useState<NewsCardType[]>([]);
+  const [control, setControl] = useState<DeliveryControl | null>(null);
+  const [category, setCategory] = useState('全部');
+  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [balance, setBalance] = useState<{ points: number; experience: number } | null>(null);
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  const y = useMotionValue(0);
-  const opacity = useTransform(y, [-200, 0, 200], [0.5, 1, 0.5]);
+  const [toggling, setToggling] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchNews = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        console.log('Fetching news...');
-        const data = await getNews(1, 50);
-        console.log('News data:', data);
-        setNewsList(data.items);
-      } catch (e: any) {
-        console.error('News error:', e);
-        const msg = e?.response?.data?.detail || e.message;
-        if (e?.response?.status === 401) {
-          setError('请先登录后查看资讯');
-        } else {
-          setError(msg || '加载失败');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchNews();
+    Promise.all([getNews(1, 50), getDeliveryControl()])
+      .then(([result, status]) => {
+        setNews(result.items);
+        setControl(status);
+      })
+      .catch((err) => setError(err?.message || '资讯加载失败'))
+      .finally(() => setLoading(false));
   }, []);
 
-  const filteredNews = activeCategory === 'all'
-    ? newsList
-    : newsList.filter((n) => n.category === activeCategory);
+  const filtered = useMemo(() => news.filter((item) => {
+    const inCategory = category === '全部' || item.category === category;
+    const text = `${item.title} ${item.summary || ''} ${item.source}`.toLowerCase();
+    return inCategory && text.includes(query.trim().toLowerCase());
+  }), [news, category, query]);
 
-  const paginatedNews = filteredNews.length > 0 ? filteredNews : newsList;
-
-  const goToNext = useCallback(() => {
-    if (isAnimating) return;
-    setIsAnimating(true);
-    setCurrentIndex((prev) => Math.min(prev + 1, Math.max(0, paginatedNews.length - 1)));
-    setTimeout(() => setIsAnimating(false), 400);
-  }, [isAnimating, paginatedNews.length]);
-
-  const goToPrev = useCallback(() => {
-    if (isAnimating) return;
-    setIsAnimating(true);
-    setCurrentIndex((prev) => Math.max(prev - 1, 0));
-    setTimeout(() => setIsAnimating(false), 400);
-  }, [isAnimating]);
-
-  useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      if (isAnimating) return;
-      if (e.deltaY > 50) {
-        e.preventDefault();
-        goToNext();
-      } else if (e.deltaY < -50) {
-        e.preventDefault();
-        goToPrev();
-      }
-    };
-
-    const container = containerRef.current;
-    if (container) {
-      container.addEventListener('wheel', handleWheel, { passive: false });
-      return () => container.removeEventListener('wheel', handleWheel);
+  const toggleDelivery = async () => {
+    if (!isAuthenticated()) {
+      router.push('/auth?next=/news');
+      return;
     }
-  }, [goToNext, goToPrev, isAnimating]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-        goToNext();
-      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-        goToPrev();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [goToNext, goToPrev]);
-
-  const handleTouchStart = useRef<{ x: number; y: number } | null>(null);
-
-  const onTouchStart = (e: React.TouchEvent) => {
-    handleTouchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  };
-
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (!handleTouchStart.current || isAnimating) return;
-    const deltaY = e.changedTouches[0].clientY - handleTouchStart.current.y;
-    if (deltaY < -50) {
-      goToNext();
-    } else if (deltaY > 50) {
-      goToPrev();
+    if (!control) return;
+    setToggling(true);
+    setError('');
+    try {
+      setControl(await setDeliveryControl(!control.enabled));
+    } catch (err: any) {
+      setError(err?.message || '开关更新失败');
+    } finally {
+      setToggling(false);
     }
-    handleTouchStart.current = null;
-  };
-
-  const handleReward = (resp: ReadingResponse) => {
-    setBalance({ points: resp.new_balance, experience: resp.experience_earned });
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header
-        activeCategory={activeCategory}
-        onCategoryChange={(cat) => {
-          setActiveCategory(cat);
-          setCurrentIndex(0);
-        }}
-      />
+    <div className="min-h-screen bg-[#f7f5ef] text-[#17241d]">
+      <Header showSearch={false} />
       <Sidebar />
-
-      <main className="pt-16 lg:pl-64 pb-20 lg:pb-0 min-h-screen">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-2xl font-bold text-white">AI 资讯</h1>
-              <p className="text-muted text-sm">本地 Ollama 精选摘要 · 阅读资讯，获取积分，收集卡牌</p>
-            </div>
-            <div className="hidden sm:flex items-center gap-2 text-xs text-muted">
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              本地模型驱动
-            </div>
-          </div>
-
-          <div className="lg:hidden flex gap-2 overflow-x-auto pb-3 scrollbar-hidden">
-            {categories.map((cat) => (
-              <motion.button
-                key={cat}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  setActiveCategory(cat);
-                  setCurrentIndex(0);
-                }}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                  activeCategory === cat
-                    ? 'bg-primary/20 text-primary border border-primary/30'
-                    : 'bg-surface text-muted border border-border'
-                }`}
-              >
-                {categoryLabels[cat]}
-              </motion.button>
-            ))}
-          </div>
-
-          <div
-            ref={containerRef}
-            className="relative h-[calc(100vh-180px)] lg:h-[calc(100vh-200px)] overflow-hidden perspective-1000"
-            onTouchStart={onTouchStart}
-            onTouchEnd={onTouchEnd}
-          >
-            {loading ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-12 h-12 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
-                  <p className="text-muted">加载资讯中...</p>
+      <main className="min-h-screen pb-24 pt-20 lg:pl-64 lg:pb-12">
+        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
+          <section className="mb-8 overflow-hidden rounded-3xl border border-[#d9d4c8] bg-[#17241d] p-6 text-white sm:p-8">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-[#a8c8b3]">
+                  <ShieldCheck className="h-4 w-4" /> NEXUS KNOWLEDGE BRIEF
                 </div>
+                <h1 className="font-serif text-3xl font-semibold tracking-tight sm:text-5xl">少刷信息，多理解行业。</h1>
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-[#c7d2ca] sm:text-base">精选硬核来源，用事实摘要、背景知识、术语解释与求职视角，帮助你真正读懂一条新闻。</p>
               </div>
-            ) : error ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="flex flex-col items-center gap-3 text-center">
-                  <p className="text-accent">加载失败: {error}</p>
-                  <button
-                    onClick={() => window.location.reload()}
-                    className="px-4 py-2 rounded-lg bg-primary/20 text-primary border border-primary/30"
-                  >
-                    重试
-                  </button>
-                </div>
-              </div>
-            ) : paginatedNews.length > 0 ? (
-              <AnimatePresence mode="popLayout">
-                <motion.div
-                  key={currentIndex}
-                  initial={{ opacity: 0, y: 100, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -100, scale: 0.95 }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="absolute inset-0"
-                >
-                  <NewsCard
-                    card={paginatedNews[currentIndex]}
-                    index={currentIndex}
-                    isActive={true}
-                    onSwipe={() => goToNext()}
-                    onReward={handleReward}
-                  />
-                </motion.div>
-              </AnimatePresence>
-            ) : (
-              <div className="flex items-center justify-center h-full text-muted">
-                暂无资讯
-              </div>
-            )}
-
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden md:flex flex-col items-center gap-4 z-20">
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={goToPrev}
-                disabled={currentIndex === 0}
-                className="w-12 h-12 rounded-full glass-card flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:text-primary transition-colors"
+              <button
+                onClick={toggleDelivery}
+                disabled={!control || toggling}
+                className={`inline-flex min-w-44 items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-bold transition disabled:opacity-60 ${control?.enabled ? 'bg-[#f0c66e] text-[#2c2415] hover:bg-[#f5d58e]' : 'bg-[#9fd2b2] text-[#173523] hover:bg-[#b7dec5]'}`}
               >
-                <ChevronUp className="w-6 h-6" />
-              </motion.button>
-              <span className="text-muted text-sm font-mono">
-                {currentIndex + 1} / {paginatedNews.length}
-              </span>
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={goToNext}
-                disabled={currentIndex === paginatedNews.length - 1}
-                className="w-12 h-12 rounded-full glass-card flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:text-primary transition-colors"
-              >
-                <ChevronDown className="w-6 h-6" />
-              </motion.button>
+                {toggling ? <Loader2 className="h-4 w-4 animate-spin" /> : control?.enabled ? <PauseCircle className="h-5 w-5" /> : <PlayCircle className="h-5 w-5" />}
+                {control?.enabled ? '暂停全部更新与推送' : '恢复更新与推送'}
+              </button>
             </div>
+            {control && <p className="mt-4 text-xs text-[#a8b8ad]">当前状态：{control.enabled ? '运行中。定时任务会使用本地模型生成并推送。' : '已截停。历史内容仍可正常阅读，不会消耗本地模型。'}</p>}
+          </section>
 
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 lg:hidden z-20">
-              <div className="flex items-center gap-2 px-4 py-2 rounded-full glass-card">
-                {paginatedNews.map((_, idx) => (
-                  <motion.div
-                    key={idx}
-                    animate={{
-                      backgroundColor: idx === currentIndex ? '#00FFD1' : '#2A2A38',
-                      width: idx === currentIndex ? 20 : 8,
-                    }}
-                    className="h-1.5 rounded-full transition-all"
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="absolute bottom-20 right-4 hidden lg:flex flex-col items-center gap-1 z-20">
-              {paginatedNews.map((_, idx) => (
-                <motion.div
-                  key={idx}
-                  animate={{
-                    backgroundColor: idx === currentIndex ? '#00FFD1' : '#2A2A38',
-                    height: idx === currentIndex ? 20 : 8,
-                  }}
-                  className="w-1.5 rounded-full transition-all cursor-pointer"
-                  onClick={() => setCurrentIndex(idx)}
-                />
+          <section className="mb-8 flex flex-col gap-4 rounded-2xl border border-stone-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-2 overflow-x-auto">
+              {categories.map((item) => (
+                <button key={item} onClick={() => setCategory(item)} className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold ${category === item ? 'bg-[#285b40] text-white' : 'bg-[#f3f1eb] text-[#58675d] hover:bg-[#e8eee9]'}`}>{item}</button>
               ))}
             </div>
-          </div>
+            <label className="flex min-w-64 items-center gap-2 rounded-full border border-stone-300 bg-[#faf9f6] px-4 py-2.5">
+              <Search className="h-4 w-4 text-[#6d7d72]" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索主题、公司或来源" className="w-full bg-transparent text-sm outline-none placeholder:text-[#9a9f9b]" />
+            </label>
+          </section>
 
-          <div className="lg:hidden mt-4 text-center text-xs text-muted">
-            滑动或使用方向键浏览更多资讯
-          </div>
+          {error && <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+          {loading ? (
+            <div className="flex min-h-72 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-[#285b40]" /></div>
+          ) : filtered.length ? (
+            <div className="grid gap-7 xl:grid-cols-2">
+              {filtered.map((item, index) => <NewsCard key={item.id} card={item} priority={index < 2} />)}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-stone-200 bg-white p-12 text-center text-[#6d7d72]">没有匹配的资讯。调整搜索条件，或恢复更新后等待下一期简报。</div>
+          )}
         </div>
       </main>
-
       <BottomNav />
     </div>
   );

@@ -4,6 +4,7 @@ import type {
   User,
   NewsCard as NewsCardType,
   NewsCardListResponse,
+  DeliveryControl,
   ReadingResponse,
   PointBalanceResponse,
   DrawCardResponse,
@@ -244,6 +245,16 @@ export async function getReadingHistory(page = 1, pageSize = 20): Promise<NewsCa
 export async function getNewsCard(cardId: string): Promise<NewsCardType> {
   const resp = await apiClient.get(`/news/${cardId}`);
   return resp as unknown as NewsCardType;
+}
+
+export async function getDeliveryControl(): Promise<DeliveryControl> {
+  const resp = await apiClient.get('/control/status');
+  return resp as unknown as DeliveryControl;
+}
+
+export async function setDeliveryControl(enabled: boolean): Promise<DeliveryControl> {
+  const resp = await apiClient.put('/control/status', { enabled });
+  return resp as unknown as DeliveryControl;
 }
 
 export async function markAsRead(cardId: string, readDuration: number): Promise<ReadingResponse> {
