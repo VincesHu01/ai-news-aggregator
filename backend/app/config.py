@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     FEISHU_WEBHOOK_URL: str = ""
     PUBLIC_APP_URL: str = "https://ai-news-frontend-kappa.vercel.app"
     PUBLIC_API_URL: str = "https://ai-news-db-egqx.onrender.com"
+    # 云端数据库若被重建，优先保持暂停，避免意外启动本机模型消耗资源。
+    DELIVERY_ENABLED_DEFAULT: bool = False
 
     # CORS：部署时设置为 ["*"] 或具体域名列表
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8080"]

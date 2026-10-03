@@ -77,8 +77,10 @@ app.include_router(control.router, prefix="/api/control", tags=["Delivery contro
 async def health_check():
     return {
         "status": "ok",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "service": "AI News Aggregator",
+        "reader_mode": "knowledge_brief",
+        "delivery_control": True,
         "generation_mode": "local_ollama_import" if settings.LOCAL_INGEST_ONLY else "local_ollama_direct",
         "external_llm_api": False,
     }

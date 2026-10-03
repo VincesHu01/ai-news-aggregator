@@ -42,19 +42,24 @@ class PushService:
         payload = {
             "msg_type": "interactive",
             "card": {
-                "schema": "2.0",
                 "config": {"wide_screen_mode": True},
                 "header": {
                     "template": "green" if enabled else "grey",
                     "title": {"tag": "plain_text", "content": f"NEXUS 推送控制 · {state}"},
                 },
-                "body": {"elements": [
-                    {"tag": "markdown", "content": f"**当前状态：{state}**\n\n{detail}\n\n可随时用下面的按钮更改；历史新闻不会被删除。"},
+                "elements": [
+                    {
+                        "tag": "div",
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**当前状态：{state}**\n\n{detail}\n\n可随时用下面的按钮更改；历史新闻不会被删除。",
+                        },
+                    },
                     {"tag": "action", "actions": [
                         {"tag": "button", "text": {"tag": "plain_text", "content": "暂停全部推送"}, "type": "danger", "url": make_control_url("pause")},
                         {"tag": "button", "text": {"tag": "plain_text", "content": "恢复推送"}, "type": "primary", "url": make_control_url("resume")},
                     ]},
-                ]},
+                ],
             },
         }
         try:
@@ -117,14 +122,13 @@ class PushService:
         payload = {
             "msg_type": "interactive",
             "card": {
-                "schema": "2.0",
                 "config": {"wide_screen_mode": True},
                 "header": {
                     "template": "blue",
                     "title": {"tag": "plain_text", "content": f"NEXUS 每日知识简报 | {report_date}"},
                 },
-                "body": {"elements": [
-                    {"tag": "markdown", "content": content},
+                "elements": [
+                    {"tag": "div", "text": {"tag": "lark_md", "content": content}},
                     {
                         "tag": "action",
                         "actions": [
@@ -142,7 +146,7 @@ class PushService:
                             },
                         ],
                     },
-                ]},
+                ],
             },
         }
         try:

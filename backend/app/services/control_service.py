@@ -18,7 +18,11 @@ async def get_delivery_control() -> DeliveryControl:
         )).scalar_one_or_none()
         if row:
             return row
-        row = DeliveryControl(id="global", enabled=True, updated_by="system-default")
+        row = DeliveryControl(
+            id="global",
+            enabled=settings.DELIVERY_ENABLED_DEFAULT,
+            updated_by="system-default",
+        )
         db.add(row)
         await db.commit()
         await db.refresh(row)
