@@ -77,13 +77,30 @@ def _single_topic_tag(incoming: DigestCard) -> str:
     tag = str(incoming.topic_tag or "").strip().lstrip("#")
     if tag and tag.lower() not in GENERIC_TAGS:
         return tag[:24]
-    # Older exports attached the report-wide keyword list to every card. Do
-    # not recycle those broad/repeated tags; use one honest category label.
+    # Older exports did not have a per-story tag. Derive one narrow topic from
+    # the actual story instead of falling back to broad labels such as "AI".
+    text = f"{incoming.title} {incoming.summary} {incoming.source}".lower()
+    keyword_tags = (
+        (("regulation o", "关联贷款"), "关联贷款监管"),
+        (("卫星", "satellite", "skynet"), "国防卫星"),
+        (("航空", "航班", "flydubai", "劫持"), "航空安全"),
+        (("黑客", "网络安全", "hack"), "网络攻防"),
+        (("评估", "评测", "benchmark"), "模型评测"),
+        (("交易", "trade", "chatham"), "AI交易自动化"),
+        (("企业ai", "企业 ai", "autonomous ai", "智能体"), "企业智能体"),
+        (("芯片", "gpu", "半导体"), "AI芯片"),
+        (("开源", "open source"), "开源模型"),
+        (("融资", "估值", "funding"), "科技融资"),
+        (("监管", "政策", "regulation"), "行业监管"),
+    )
+    for keywords, derived_tag in keyword_tags:
+        if any(keyword in text for keyword in keywords):
+            return derived_tag
     return {
-        "tech": "模型与产品",
-        "finance": "公司与市场",
-        "politics": "政策与国际",
-    }.get(incoming.category, "行业动态")
+        "tech": "技术落地",
+        "finance": "商业变革",
+        "politics": "公共治理",
+    }.get(incoming.category, "产业观察")
 
 
 async def _discover_cover_image(url: str) -> Optional[str]:

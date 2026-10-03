@@ -32,7 +32,7 @@ export default function NewsCard({ card, priority = false }: NewsCardProps) {
           />
         ) : (
           <div className="absolute inset-0 flex items-end bg-[radial-gradient(circle_at_20%_10%,#d9ede0,transparent_45%),linear-gradient(135deg,#e9e2d2,#c9d9ce)] p-6">
-            <span className="font-serif text-3xl font-semibold tracking-tight text-[#284b3b]/80">NEXUS / {tag}</span>
+            <span className="font-serif text-3xl font-semibold tracking-tight text-[#284b3b]/80">NEXUS / BRIEF</span>
           </div>
         )}
         <div className="absolute inset-x-0 top-0 flex items-center justify-between p-4">
